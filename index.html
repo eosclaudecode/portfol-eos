@@ -108,10 +108,54 @@
   .tip .v{margin-left:auto;font-variant-numeric:tabular-nums;font-weight:600;padding-left:10px}
   .empty{padding:40px;text-align:center;color:var(--muted)}
   footer{margin-top:30px;font-size:12.5px;color:var(--muted);text-align:center}
+  /* Login */
+  .login-card{max-width:420px;margin:8vh auto;background:var(--card);border:1px solid var(--border);border-radius:16px;padding:28px;box-shadow:var(--shadow)}
+  .login-card .field input{width:100%}
+  /* Portfolio-Leiste */
+  .pfbar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;background:var(--card);border:1px solid var(--border);
+    border-radius:var(--radius);padding:10px 14px;margin-bottom:16px;box-shadow:var(--shadow)}
+  .pfbar select{max-width:220px}
 </style>
+<script>
+/* ============================================================
+   >>> CLOUD-KONFIGURATION (optional) <<<
+   Für geräteübergreifende Konten mit Live-Sync: kostenloses
+   Firebase-Projekt anlegen (siehe SETUP-FIREBASE.md) und den
+   Konfigurationsblock aus der Firebase-Konsole hier einsetzen.
+   Bleiben die Felder leer, arbeitet die App rein lokal.
+   ============================================================ */
+window.DEPOT_FIREBASE = {
+  apiKey: "AIzaSyAvHHGqFPAytbOtzh-CmKC7k4j94-oCyXg",
+  authDomain: "portfol-eos.firebaseapp.com",
+  projectId: "portfol-eos",
+  appId: "1:1099489022650:web:d9de354fdeb9bb40d1a883"
+  // storageBucket und messagingSenderId werden nicht benötigt
+};
+</script>
 </head>
 <body>
 <div class="wrap">
+  <!-- ================= LOGIN ================= -->
+  <section id="loginView" style="display:none">
+    <div class="login-card">
+      <div class="logo" style="justify-content:center;margin-bottom:8px"><span class="dot">◔</span> Depot&nbsp;Copilot</div>
+      <p class="small muted" style="text-align:center;margin-bottom:16px" id="loginSubtitle">
+        Deine Portfolios werden mit deinem Passwort AES-256-verschlüsselt in diesem Browser gespeichert –
+        ohne Passwort für niemanden lesbar.</p>
+      <div class="field" style="margin-top:0"><label id="loginUserLabel">Benutzername</label>
+        <input type="text" id="loginUser" autocomplete="username" autocapitalize="off"></div>
+      <div class="field"><label>Passwort</label>
+        <input type="password" id="loginPass" autocomplete="current-password"></div>
+      <div id="loginMsg" class="small" style="color:var(--neg);min-height:18px;margin-top:8px"></div>
+      <button id="loginBtn" class="primary" style="width:100%">Anmelden</button>
+      <button id="registerBtn" style="width:100%;margin-top:8px;display:none">Neues Konto registrieren</button>
+      <button id="guestBtn" style="width:100%;margin-top:8px">Ohne Konto fortfahren (Gastmodus)</button>
+      <p class="hint" style="margin-top:14px" id="loginHint">Unbekannte Benutzernamen werden nach Rückfrage neu angelegt.
+        Daten liegen nur auf diesem Gerät (Umzug per Export/Import). Passwort vergessen = Daten unwiederbringlich.</p>
+    </div>
+  </section>
+
+  <div id="appUI" style="display:none">
   <header>
     <div class="logo"><span class="dot">◔</span> Depot&nbsp;Copilot</div>
     <div class="toolbar">
@@ -128,6 +172,19 @@
       <input type="file" id="importFile" accept=".json" style="display:none">
     </div>
   </header>
+
+  <div class="pfbar">
+    <span class="small muted">Konto:</span> <strong id="userLabel"></strong>
+    <span style="width:10px"></span>
+    <span class="small muted">Portfolio:</span>
+    <select id="pfSel"></select>
+    <button id="pfNew" title="Neues Portfolio anlegen">＋ Neu</button>
+    <button id="pfRen" title="Portfolio umbenennen">✎</button>
+    <button id="pfDel" class="danger" title="Portfolio löschen">✕</button>
+    <span class="spacer"></span>
+    <span id="syncBadge" class="small muted"></span>
+    <button id="logoutBtn">Abmelden</button>
+  </div>
 
   <div class="tabs">
     <button id="tabDepot" class="active">Depot</button>
@@ -241,7 +298,8 @@
     </div>
   </section>
 
-  <footer>Kursdaten: Yahoo Finance (ohne Gewähr, ggf. 15 min verzögert) · Alle Daten bleiben lokal in deinem Browser · Keine Anlageberatung</footer>
+  <footer>Kursdaten: Yahoo Finance (ohne Gewähr, ggf. 15 min verzögert) · Alle Daten bleiben lokal und verschlüsselt in deinem Browser · Keine Anlageberatung</footer>
+  </div><!-- /appUI -->
 </div>
 
 <!-- ================= ADD / EDIT MODAL ================= -->
@@ -293,32 +351,162 @@ const fmtPct2 = new Intl.NumberFormat("de-DE",{minimumFractionDigits:1,maximumFr
 const eur = v => v==null||isNaN(v) ? "–" : fmtEUR.format(v);
 const sign = v => (v>0?"+":"") ;
 
-/* ---------- State ---------- */
-const LS_KEY = "depotCopilot.v1";
-const DEFAULT_STATE = {
-  positions: [
-    {id:"p1", symbol:"EUNL.DE", name:"iShares Core MSCI World UCITS ETF", shares:30, buyPrice:92.50, targetPct:60},
-    {id:"p2", symbol:"IS3N.DE", name:"iShares Core MSCI EM IMI UCITS ETF", shares:45, buyPrice:31.80, targetPct:25},
-    {id:"p3", symbol:"VWCE.DE", name:"Vanguard FTSE All-World UCITS ETF",  shares:10, buyPrice:118.40, targetPct:15},
-  ],
-  settings: {auto:60, proxyIndex:0}
-};
-let state = loadState();
-state.settings = Object.assign({auto:60, proxyIndex:0, range:"3mo", chartMode:"total"}, state.settings||{});
-let quotes = {};   // symbol -> {price, prevClose, currency, priceEUR, prevEUR, spark:[], m3:pct, err}
-let fxRates = {};  // "USD" -> EUR per 1 USD
+/* ---------- State & Konten ---------- */
+const USERS_KEY   = "depotCopilot.users.v1";   // {name:{salt, blob}} – blob ist AES-GCM-verschlüsselt
+const GUEST_KEY   = "depotCopilot.v1";         // Gastmodus / Altdaten (unverschlüsselt)
+const SESSION_KEY = "depotCopilot.session";    // sessionStorage: Sitzung überlebt Reload, nicht Tab-Schließen
+const PBKDF2_ITER = 250000;
+const uid = () => "p" + Math.random().toString(36).slice(2,9);
+
+const SAMPLE_POSITIONS = [
+  {id:"p1", symbol:"EUNL.DE", name:"iShares Core MSCI World UCITS ETF", shares:30, buyPrice:92.50, targetPct:60},
+  {id:"p2", symbol:"IS3N.DE", name:"iShares Core MSCI EM IMI UCITS ETF", shares:45, buyPrice:31.80, targetPct:25},
+  {id:"p3", symbol:"VWCE.DE", name:"Vanguard FTSE All-World UCITS ETF",  shares:10, buyPrice:118.40, targetPct:15},
+];
+const DEFAULT_SETTINGS = {auto:60, proxyIndex:0, range:"3mo", chartMode:"total"};
+
+let session  = {user:null, key:null, cloud:false, uid:null};  // key: CryptoKey (AES-GCM, nur lokal)
+let userData = null;                   // {portfolios:[{id,name,positions}], active, settings}
+let state    = null;                   // Sicht auf aktives Portfolio: {positions, settings}
+let quotes = {};   // symbol -> {price, prevClose, currency, priceEUR, prevEUR, spark:[], times:[], m3, err}
+let fxRates = {};  // "USD" -> EUR je 1 USD
 let refreshTimer = null;
 let fetching = false;
 
-function loadState(){
-  try{
-    const raw = localStorage.getItem(LS_KEY);
-    if(raw){ const s = JSON.parse(raw); if(Array.isArray(s.positions)) return s; }
-  }catch(e){}
-  return JSON.parse(JSON.stringify(DEFAULT_STATE));
+/* --- Cloud-Modus (Firebase), aktiv sobald oben apiKey + projectId eingetragen sind --- */
+const FB_CFG = (window.DEPOT_FIREBASE && window.DEPOT_FIREBASE.apiKey && window.DEPOT_FIREBASE.projectId)
+  ? window.DEPOT_FIREBASE : null;
+const CLOUD_ON = !!FB_CFG;
+const CLIENT_ID = Math.random().toString(36).slice(2);  // erkennt eigene Schreibvorgänge im Live-Sync
+let fbAuth = null, fbDb = null, liveUnsub = null;
+
+const FAKE_MAIL_DOMAIN = "depot.local"; // Benutzername ohne @ wird intern zu name@depot.local (es wird nie eine Mail versendet)
+const toEmail = n => n.includes("@") ? n.toLowerCase() : n.toLowerCase().replace(/\s+/g,"") + "@" + FAKE_MAIL_DOMAIN;
+const displayName = email => email && email.endsWith("@"+FAKE_MAIL_DOMAIN) ? email.split("@")[0] : (email||"");
+
+function loadScript(src){
+  return new Promise((res,rej)=>{
+    const s = document.createElement("script");
+    s.src = src; s.onload = res; s.onerror = ()=> rej(new Error("Firebase-SDK konnte nicht geladen werden"));
+    (document.head||document.documentElement).appendChild(s);
+  });
 }
-function saveState(){ localStorage.setItem(LS_KEY, JSON.stringify(state)); }
-const uid = () => "p" + Math.random().toString(36).slice(2,9);
+async function initFirebase(){
+  if(fbAuth) return true;
+  if(!window.firebase){
+    const base = "https://www.gstatic.com/firebasejs/10.14.1/";
+    await loadScript(base+"firebase-app-compat.js");
+    await Promise.all([loadScript(base+"firebase-auth-compat.js"), loadScript(base+"firebase-firestore-compat.js")]);
+  }
+  firebase.initializeApp(FB_CFG);
+  fbAuth = firebase.auth();
+  fbDb = firebase.firestore();
+  try{ await fbAuth.setPersistence(firebase.auth.Auth.Persistence.LOCAL); }catch(e){}
+  return true;
+}
+const depotDoc = uid => fbDb.collection("depots").doc(uid);
+
+function fbErr(e){
+  const c = (e && e.code) || "";
+  const m = (e && e.message) || String(e);
+  if(/wrong-password|invalid-credential|user-not-found/.test(c))
+    return "Name/Passwort falsch – oder das Konto existiert noch nicht (dann »Neues Konto registrieren«).";
+  if(/email-already-in-use/.test(c)) return "Dieses Konto existiert bereits – bitte anmelden.";
+  if(/weak-password/.test(c)) return "Passwort zu kurz (mindestens 6 Zeichen).";
+  if(/invalid-email/.test(c)) return "Benutzername ungültig – nur Buchstaben und Zahlen, oder eine echte E-Mail-Adresse.";
+  if(/operation-not-allowed/.test(c)) return "In der Firebase-Konsole ist die Anmeldung per E-Mail/Passwort noch nicht aktiviert (Authentication → Sign-in method).";
+  if(/unauthorized-domain/.test(c)) return "Diese Domain ist in Firebase nicht freigegeben: Authentication → Settings → Authorized domains → deine github.io-Domain hinzufügen.";
+  if(/too-many-requests/.test(c)) return "Zu viele Fehlversuche. Bitte kurz warten.";
+  if(/network-request-failed/.test(c)) return "Keine Verbindung zur Cloud – bitte Internetverbindung prüfen.";
+  if(/permission-denied/.test(c)) return "Zugriff verweigert – bitte die Firestore-Regeln aus der Anleitung prüfen.";
+  return "Fehler: " + (c ? c+" – " : "") + m;
+}
+
+function defaultUserData(withSample){
+  const id = uid();
+  return {
+    portfolios: [{id, name:"Mein Depot", positions: withSample ? JSON.parse(JSON.stringify(SAMPLE_POSITIONS)) : []}],
+    active: id,
+    settings: {...DEFAULT_SETTINGS}
+  };
+}
+function activePf(){
+  if(!userData) return null;
+  return userData.portfolios.find(p=>p.id===userData.active) || userData.portfolios[0];
+}
+function readUsers(){
+  try{ return JSON.parse(localStorage.getItem(USERS_KEY)) || {}; }catch(e){ return {}; }
+}
+function readGuestData(){
+  try{
+    const raw = localStorage.getItem(GUEST_KEY);
+    if(!raw) return null;
+    const d = JSON.parse(raw);
+    if(Array.isArray(d.portfolios)) return d;
+    if(Array.isArray(d.positions)){ // Altformat aus früherer Version migrieren
+      const id = uid();
+      return {portfolios:[{id, name:"Mein Depot", positions:d.positions}], active:id,
+              settings:Object.assign({...DEFAULT_SETTINGS}, d.settings||{})};
+    }
+  }catch(e){}
+  return null;
+}
+
+/* --- Krypto (WebCrypto: PBKDF2 -> AES-256-GCM) --- */
+const bufToB64 = buf => btoa(String.fromCharCode(...new Uint8Array(buf)));
+const b64ToBuf = b64 => Uint8Array.from(atob(b64), c=>c.charCodeAt(0)).buffer;
+
+async function deriveKeyBits(password, saltBuf){
+  const km = await crypto.subtle.importKey("raw", new TextEncoder().encode(password), "PBKDF2", false, ["deriveBits"]);
+  return crypto.subtle.deriveBits({name:"PBKDF2", salt:saltBuf, iterations:PBKDF2_ITER, hash:"SHA-256"}, km, 256);
+}
+async function importAesKey(bits){
+  return crypto.subtle.importKey("raw", bits, "AES-GCM", false, ["encrypt","decrypt"]);
+}
+async function encryptJSON(key, obj){
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const ct = await crypto.subtle.encrypt({name:"AES-GCM", iv}, key, new TextEncoder().encode(JSON.stringify(obj)));
+  return bufToB64(iv) + "." + bufToB64(ct);
+}
+async function decryptJSON(key, str){
+  const [ivB64, ctB64] = String(str).split(".");
+  const pt = await crypto.subtle.decrypt({name:"AES-GCM", iv:new Uint8Array(b64ToBuf(ivB64))}, key, b64ToBuf(ctB64));
+  return JSON.parse(new TextDecoder().decode(pt));
+}
+
+/* --- Persistenz: entprellt (500 ms) und serialisiert, Cloud oder lokal --- */
+let persistTimer = null;
+let persistBusy = Promise.resolve();
+function saveState(){
+  if(!userData || !state) return;
+  const pf = activePf();
+  if(pf) pf.positions = state.positions;
+  userData.settings = state.settings;
+  clearTimeout(persistTimer);
+  persistTimer = setTimeout(()=>{ persistBusy = persistBusy.then(persistNow).catch(()=>{}); }, 500);
+}
+async function flushPersist(){
+  clearTimeout(persistTimer);
+  persistBusy = persistBusy.then(persistNow).catch(()=>{});
+  await persistBusy;
+}
+async function persistNow(){
+  if(!userData) return;
+  if(session.cloud && fbDb){
+    try{
+      await depotDoc(session.uid).set({data: userData, client: CLIENT_ID, updatedAt: new Date().toISOString()});
+      setSync("ok");
+    }catch(e){ setSync("err"); throw e; }
+  } else if(session.user && session.key){
+    const users = readUsers();
+    const rec = users[session.user];
+    if(!rec) return;
+    rec.blob = await encryptJSON(session.key, userData);
+    localStorage.setItem(USERS_KEY, JSON.stringify(users));
+  } else {
+    localStorage.setItem(GUEST_KEY, JSON.stringify(userData));
+  }
+}
 
 /* ---------- Datenabruf (Yahoo Finance über CORS-Proxys) ---------- */
 const PROXIES = [
@@ -381,6 +569,7 @@ function toEUR(value, currency){
 }
 
 async function refreshQuotes(){
+  if(!state) return;
   if(fetching || state.positions.length===0){ render(); return; }
   fetching = true;
   setStatus('<span class="spin"></span> Kurse werden geladen …');
@@ -485,6 +674,7 @@ function sparkline(data, w=70, h=24){
 }
 
 function render(){
+  if(!state) return;
   renderKPIs(); renderHistory(); renderPositions(); renderDonut(); renderTargets();
 }
 
@@ -950,35 +1140,36 @@ document.getElementById("refreshBtn").onclick = ()=> refreshQuotes();
 /* Chart-Steuerung */
 const modeTotalBtn = document.getElementById("modeTotal"), modeStackBtn = document.getElementById("modeStack");
 function syncModeBtns(){
+  if(!state) return;
   const stacked = state.settings.chartMode==="stacked";
   modeTotalBtn.classList.toggle("active", !stacked);
   modeStackBtn.classList.toggle("active", stacked);
 }
 modeTotalBtn.onclick = ()=>{ state.settings.chartMode="total";   saveState(); syncModeBtns(); renderHistory(); };
 modeStackBtn.onclick = ()=>{ state.settings.chartMode="stacked"; saveState(); syncModeBtns(); renderHistory(); };
-syncModeBtns();
 const rangeSel = document.getElementById("rangeSel");
-rangeSel.value = state.settings.range || "3mo";
 rangeSel.onchange = ()=>{ state.settings.range = rangeSel.value; saveState(); updateTrendHeader(); refreshQuotes(); };
 const RANGE_LABEL = {"1mo":"1 M","3mo":"3 M","6mo":"6 M","1y":"1 J"};
 function updateTrendHeader(){
   const th = document.getElementById("thTrend");
-  if(th) th.textContent = RANGE_LABEL[state.settings.range] || "3 M";
+  if(th && state) th.textContent = RANGE_LABEL[state.settings.range] || "3 M";
 }
-updateTrendHeader();
 const autoSel = document.getElementById("autoSel");
-autoSel.value = String(state.settings.auto!=null?state.settings.auto:60);
 autoSel.onchange = ()=>{ state.settings.auto = +autoSel.value; saveState(); setupAuto(); };
 function setupAuto(){
   clearInterval(refreshTimer);
-  if(state.settings.auto>0) refreshTimer = setInterval(refreshQuotes, state.settings.auto*1000);
+  if(state && state.settings.auto>0) refreshTimer = setInterval(refreshQuotes, state.settings.auto*1000);
 }
 
 document.getElementById("exportBtn").onclick = ()=>{
-  const blob = new Blob([JSON.stringify(state,null,2)],{type:"application/json"});
+  if(!userData) return;
+  saveState();
+  const payload = {format:"depot-copilot-v2", exported:new Date().toISOString(),
+                   portfolios:userData.portfolios, settings:userData.settings};
+  const blob = new Blob([JSON.stringify(payload,null,2)],{type:"application/json"});
   const a = document.createElement("a");
   a.href = URL.createObjectURL(blob);
-  a.download = "depot-copilot-export.json";
+  a.download = `depot-copilot-${session.user||"gast"}.json`;
   a.click(); URL.revokeObjectURL(a.href);
 };
 document.getElementById("importBtn").onclick = ()=> document.getElementById("importFile").click();
@@ -988,8 +1179,16 @@ document.getElementById("importFile").onchange = e=>{
   r.onload = ()=>{
     try{
       const s = JSON.parse(r.result);
-      if(!Array.isArray(s.positions)) throw new Error("ungültiges Format");
-      state = s; saveState(); quotes={}; render(); refreshQuotes();
+      let pfs = null;
+      if(s.format==="depot-copilot-v2" && Array.isArray(s.portfolios)) pfs = s.portfolios;
+      else if(Array.isArray(s.portfolios)) pfs = s.portfolios;
+      else if(Array.isArray(s.positions)) pfs = [{id:uid(), name:"Import", positions:s.positions}];
+      if(!pfs) throw new Error("ungültiges Format");
+      pfs.forEach(p=>{ if(!p.id) p.id = uid(); if(!p.name) p.name = "Import"; if(!Array.isArray(p.positions)) p.positions = []; });
+      const replace = confirm("OK = vorhandene Portfolios ERSETZEN.\nAbbrechen = als zusätzliche Portfolios ANHÄNGEN.");
+      if(replace) userData.portfolios = pfs;
+      else userData.portfolios.push(...pfs);
+      switchPortfolio(userData.portfolios[0].id);
     }catch(err){ alert("Import fehlgeschlagen: "+err.message); }
   };
   r.readAsText(f);
@@ -998,10 +1197,282 @@ document.getElementById("importFile").onchange = e=>{
 
 function esc(s){ return String(s==null?"":s).replace(/[&<>"']/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
 
+/* ---------- Login / Session ---------- */
+const loginView = document.getElementById("loginView"), appUI = document.getElementById("appUI");
+const loginUserEl = document.getElementById("loginUser"), loginPassEl = document.getElementById("loginPass");
+const loginMsg = el=>{ document.getElementById("loginMsg").textContent = el||""; };
+
+function showLogin(){
+  appUI.style.display = "none";
+  loginView.style.display = "";
+  loginPassEl.value = "";
+  loginMsg("");
+  if(CLOUD_ON){
+    document.getElementById("loginSubtitle").textContent =
+      "Dein Konto liegt in deiner eigenen Firebase-Cloud – Portfolios sind auf allen Geräten verfügbar und werden live synchronisiert.";
+    document.getElementById("loginUserLabel").textContent = "Benutzername oder E-Mail";
+    document.getElementById("registerBtn").style.display = "";
+    document.getElementById("loginHint").textContent =
+      "Erstanmeldung: »Neues Konto registrieren«. Mit echter E-Mail-Adresse ist später auch ein Passwort-Reset möglich.";
+  } else if(!window.crypto || !crypto.subtle){
+    loginMsg("Verschlüsselung nicht verfügbar (HTTPS nötig) – nur Gastmodus möglich.");
+    document.getElementById("loginBtn").disabled = true;
+  }
+  setTimeout(()=> loginUserEl.focus(), 50);
+}
+
+/* --- Cloud-Anmeldung (Firebase) --- */
+function setSync(kind, extra){
+  const el = document.getElementById("syncBadge");
+  if(!el) return;
+  if(!session.cloud){ el.textContent = ""; return; }
+  el.textContent = kind==="ok"   ? "☁ synchronisiert"
+                 : kind==="live" ? "☁ von anderem Gerät aktualisiert" + (extra?" ("+extra+")":"")
+                 : kind==="err"  ? "⚠ Cloud nicht erreichbar – Änderungen nicht gesichert"
+                 : "";
+  el.style.color = kind==="err" ? "var(--neg)" : "var(--muted)";
+}
+
+/* Live-Sync: Änderungen anderer Geräte sofort übernehmen */
+function startLiveSync(){
+  stopLiveSync();
+  if(!session.cloud || !fbDb) return;
+  liveUnsub = depotDoc(session.uid).onSnapshot(snap=>{
+    const d = snap && (typeof snap.data === "function" ? snap.data() : snap.data);
+    if(!d || !d.data || !Array.isArray(d.data.portfolios)) return;
+    if(d.client === CLIENT_ID) return;                                   // eigener Schreibvorgang
+    if(snap.metadata && snap.metadata.hasPendingWrites) return;          // noch nicht bestätigt
+    applyRemote(d.data);
+  }, err=> setSync("err"));
+}
+function stopLiveSync(){ if(liveUnsub){ try{ liveUnsub(); }catch(e){} liveUnsub = null; } }
+
+function applyRemote(data){
+  const prevActive = userData ? userData.active : null;
+  userData = data;
+  userData.settings = Object.assign({...DEFAULT_SETTINGS}, userData.settings||{});
+  if(prevActive && userData.portfolios.some(p=>p.id===prevActive)) userData.active = prevActive;
+  const pf = activePf();
+  const changedPf = !state || state.positions !== pf.positions;
+  state.positions = pf.positions;
+  state.settings  = userData.settings;
+  if(changedPf) quotes = {};
+  renderPfBar(); render();
+  setSync("live", new Date().toLocaleTimeString("de-DE",{hour:"2-digit",minute:"2-digit"}));
+  if(changedPf) refreshQuotes();
+}
+
+async function cloudEnterFromUser(user, freshRegister){
+  let snap = null;
+  try{ snap = await depotDoc(user.uid).get(); }catch(e){ loginMsg(fbErr(e)); return; }
+  session = {user: displayName(user.email), key:null, cloud:true, uid:user.uid};
+  const remote = snap && snap.exists ? (typeof snap.data==="function" ? snap.data() : snap.data) : null;
+  if(remote && remote.data && Array.isArray(remote.data.portfolios)){
+    userData = remote.data;
+  } else {
+    let data = null;
+    const legacy = readGuestData();
+    if(freshRegister && legacy && legacy.portfolios.some(p=>p.positions.length) &&
+       confirm("Auf diesem Gerät liegen lokale Depot-Daten (Gastmodus/frühere Version). In dein Cloud-Konto übernehmen?")){
+      data = legacy;
+    }
+    userData = data || defaultUserData(true);
+  }
+  enterApp();
+  startLiveSync();
+  if(!remote) saveState(); // Dokument erstmalig anlegen
+}
+async function cloudSignIn(name, pass){
+  try{
+    const cred = await fbAuth.signInWithEmailAndPassword(toEmail(name), pass);
+    await cloudEnterFromUser(cred.user, false);
+  }catch(e){ loginMsg(fbErr(e)); }
+}
+async function cloudSignUp(){
+  const name = loginUserEl.value.trim(), pass = loginPassEl.value;
+  loginMsg("");
+  if(!name){ loginMsg("Bitte Benutzernamen oder E-Mail eingeben."); return; }
+  if(pass.length<6){ loginMsg("Passwort braucht mindestens 6 Zeichen."); return; }
+  const btn = document.getElementById("registerBtn");
+  btn.disabled = true; btn.textContent = "Registriere …";
+  try{
+    await initFirebase();
+    const cred = await fbAuth.createUserWithEmailAndPassword(toEmail(name), pass);
+    await cloudEnterFromUser(cred.user, true);
+  }catch(e){ loginMsg(fbErr(e)); }
+  finally{ btn.disabled = false; btn.textContent = "Neues Konto registrieren"; }
+}
+document.getElementById("registerBtn").onclick = cloudSignUp;
+function enterApp(){
+  userData.settings = Object.assign({...DEFAULT_SETTINGS}, userData.settings||{});
+  const pf = activePf(); userData.active = pf.id;
+  state = {positions: pf.positions, settings: userData.settings};
+  quotes = {};
+  loginView.style.display = "none";
+  appUI.style.display = "";
+  document.getElementById("userLabel").textContent = session.user || "Gast";
+  autoSel.value = String(state.settings.auto!=null?state.settings.auto:60);
+  rangeSel.value = state.settings.range || "3mo";
+  syncModeBtns(); updateTrendHeader(); renderPfBar();
+  setSync(session.cloud ? "ok" : "");
+  render(); refreshQuotes(); setupAuto();
+}
+
+async function startSession(name, key, bits, data, remember){
+  session = {user:name, key, cloud:false, uid:null};
+  userData = data;
+  if(remember!==false){
+    try{ sessionStorage.setItem(SESSION_KEY, JSON.stringify(name?{user:name, bits:bufToB64(bits)}:{guest:true})); }catch(e){}
+  }
+  enterApp();
+}
+
+document.getElementById("loginBtn").onclick = doLogin;
+loginPassEl.addEventListener("keydown", e=>{ if(e.key==="Enter") doLogin(); });
+loginUserEl.addEventListener("keydown", e=>{ if(e.key==="Enter") loginPassEl.focus(); });
+
+async function doLogin(){
+  const name = loginUserEl.value.trim();
+  const pass = loginPassEl.value;
+  loginMsg("");
+  if(!name){ loginMsg("Bitte Benutzernamen eingeben."); return; }
+  if(!pass){ loginMsg("Bitte Passwort eingeben."); return; }
+  const btn = document.getElementById("loginBtn");
+  btn.disabled = true; btn.textContent = "Einen Moment …";
+  try{
+    if(CLOUD_ON){ await initFirebase(); await cloudSignIn(name, pass); return; }
+    const users = readUsers();
+    if(users[name]){
+      const bits = await deriveKeyBits(pass, b64ToBuf(users[name].salt));
+      const key = await importAesKey(bits);
+      let data;
+      try{ data = await decryptJSON(key, users[name].blob); }
+      catch(e){ loginMsg("Falsches Passwort."); return; }
+      await startSession(name, key, bits, data);
+    } else {
+      if(pass.length<6){ loginMsg("Neues Konto: Passwort braucht mindestens 6 Zeichen."); return; }
+      if(!confirm(`Benutzer „${name}" gibt es noch nicht. Jetzt anlegen?`)) return;
+      const salt = crypto.getRandomValues(new Uint8Array(16));
+      const bits = await deriveKeyBits(pass, salt.buffer);
+      const key = await importAesKey(bits);
+      let data = null;
+      const legacy = readGuestData();
+      if(legacy && legacy.portfolios.some(p=>p.positions.length) &&
+         confirm("Auf diesem Gerät liegen unverschlüsselte Depot-Daten (Gast/frühere Version). In dieses Konto übernehmen?")){
+        data = legacy;
+      }
+      if(!data) data = defaultUserData(true);
+      users[name] = {salt: bufToB64(salt), blob: await encryptJSON(key, data)};
+      localStorage.setItem(USERS_KEY, JSON.stringify(users));
+      await startSession(name, key, bits, data);
+    }
+  }catch(e){
+    loginMsg(CLOUD_ON ? fbErr(e) : ("Fehler: " + (e.message||e)));
+  }finally{
+    btn.disabled = false; btn.textContent = "Anmelden";
+  }
+}
+
+document.getElementById("guestBtn").onclick = ()=>{
+  session = {user:null, key:null, cloud:false, uid:null};
+  userData = readGuestData() || defaultUserData(true);
+  try{ sessionStorage.setItem(SESSION_KEY, JSON.stringify({guest:true})); }catch(e){}
+  enterApp();
+};
+
+document.getElementById("logoutBtn").onclick = async ()=>{
+  saveState();
+  try{ await flushPersist(); }catch(e){}
+  clearInterval(refreshTimer);
+  stopLiveSync();
+  if(session.cloud && fbAuth){ try{ await fbAuth.signOut(); }catch(e){} }
+  session = {user:null, key:null, cloud:false, uid:null};
+  userData = null; state = null; quotes = {};
+  setSync("");
+  try{ sessionStorage.removeItem(SESSION_KEY); }catch(e){}
+  showLogin();
+};
+
+/* ---------- Portfolio-Verwaltung ---------- */
+const pfSel = document.getElementById("pfSel");
+function renderPfBar(){
+  if(!userData) return;
+  pfSel.innerHTML = userData.portfolios.map(p=>
+    `<option value="${esc(p.id)}"${p.id===userData.active?" selected":""}>${esc(p.name)}</option>`).join("");
+  document.getElementById("pfDel").disabled = userData.portfolios.length<=1;
+}
+function switchPortfolio(id){
+  saveState(); // altes Portfolio sichern
+  userData.active = id;
+  const pf = activePf();
+  state.positions = pf.positions;
+  quotes = {};
+  renderPfBar(); render(); refreshQuotes();
+  saveState();
+}
+pfSel.onchange = ()=> switchPortfolio(pfSel.value);
+document.getElementById("pfNew").onclick = ()=>{
+  const name = prompt("Name des neuen Portfolios:", "Neues Portfolio");
+  if(name==null) return;
+  const pf = {id:uid(), name:(name.trim()||"Portfolio"), positions:[]};
+  userData.portfolios.push(pf);
+  switchPortfolio(pf.id);
+};
+document.getElementById("pfRen").onclick = ()=>{
+  const pf = activePf(); if(!pf) return;
+  const name = prompt("Neuer Name:", pf.name);
+  if(name==null || !name.trim()) return;
+  pf.name = name.trim();
+  renderPfBar(); saveState();
+};
+document.getElementById("pfDel").onclick = ()=>{
+  if(userData.portfolios.length<=1) return;
+  const pf = activePf();
+  if(!confirm(`Portfolio „${pf.name}" mit ${pf.positions.length} Position(en) endgültig löschen?`)) return;
+  userData.portfolios = userData.portfolios.filter(p=>p.id!==pf.id);
+  switchPortfolio(userData.portfolios[0].id);
+};
+
 /* ---------- Start ---------- */
-render();
-refreshQuotes();
-setupAuto();
+function waitForAuthUser(){
+  return new Promise(res=>{
+    let done = false;
+    const un = fbAuth.onAuthStateChanged(u=>{ if(done) return; done = true; try{ un(); }catch(e){} res(u); });
+    setTimeout(()=>{ if(!done){ done = true; res(null); } }, 8000);
+  });
+}
+(async function init(){
+  // Cloud: bestehende Firebase-Sitzung wiederherstellen (überlebt auch Browser-Neustart)
+  if(CLOUD_ON){
+    try{
+      await initFirebase();
+      const u = await waitForAuthUser();
+      if(u){ await cloudEnterFromUser(u, false); return; }
+    }catch(e){ showLogin(); loginMsg(fbErr(e)); return; }
+    showLogin(); return;
+  }
+  try{
+    const raw = sessionStorage.getItem(SESSION_KEY);
+    if(raw){
+      const s = JSON.parse(raw);
+      if(s.guest){
+        session = {user:null, key:null, cloud:false, uid:null};
+        userData = readGuestData() || defaultUserData(true);
+        enterApp(); return;
+      }
+      if(s.user && s.bits){
+        const users = readUsers();
+        if(users[s.user]){
+          const key = await importAesKey(b64ToBuf(s.bits));
+          userData = await decryptJSON(key, users[s.user].blob);
+          session = {user:s.user, key};
+          enterApp(); return;
+        }
+      }
+    }
+  }catch(e){ /* Sitzung ungültig -> Login */ }
+  showLogin();
+})();
 </script>
 </body>
 </html>
