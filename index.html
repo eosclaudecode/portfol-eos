@@ -199,6 +199,10 @@ window.DEPOT_FIREBASE = {
       <div class="pad flex" style="padding-bottom:6px">
         <h2 style="padding:0">Kursentwicklung</h2>
         <span class="spacer"></span>
+        <div class="seg" title="Tatsächlich: jede Position zählt erst ab ihrem Kaufdatum. Rückgerechnet: heutige Zusammensetzung über den ganzen Zeitraum.">
+          <button id="basisActual">Tatsächlich</button>
+          <button id="basisSynth">Rückgerechnet</button>
+        </div>
         <div class="seg">
           <button id="modeTotal">Gesamt</button>
           <button id="modeStack">Gestapelt</button>
@@ -210,7 +214,7 @@ window.DEPOT_FIREBASE = {
         <div id="histTip" class="tip"></div>
         <div id="histEmpty" class="muted small" style="display:none;padding:24px;text-align:center">Noch keine Kursdaten geladen.</div>
       </div>
-      <div class="pad small muted" style="padding-top:0">Tageskurse · Fremdwährungen mit aktuellem Wechselkurs umgerechnet · Basis: heutige Stückzahlen</div>
+      <div class="pad small muted" style="padding-top:0" id="histNote"></div>
     </div>
 
     <div class="cards">
@@ -360,7 +364,9 @@ window.DEPOT_FIREBASE = {
           <div class="field"><label>Anzahl (Stück)</label><input type="number" id="sharesInput" min="0" step="any" placeholder="z. B. 12"></div>
           <div class="field"><label>Einstandskurs pro Stück (€, optional)</label><input type="number" id="buyPriceInput" min="0" step="any" placeholder="z. B. 85,20"></div>
         </div>
-        <div class="hint">Der Einstandskurs dient nur der Gewinn-/Verlust-Anzeige.</div>
+        <div class="field"><label>Kaufdatum (optional)</label><input type="date" id="buyDateInput" style="width:100%"></div>
+        <div class="hint">Der Einstandskurs dient der Gewinn-/Verlust-Anzeige. Mit Kaufdatum zeigt der
+          Depot-Chart zusätzlich den tatsächlichen Verlauf – also erst ab dem Kauf.</div>
       </div>
       <div class="actions">
         <button id="cancelAdd">Abbrechen</button>
@@ -393,11 +399,11 @@ const PBKDF2_ITER = 250000;
 const uid = () => "p" + Math.random().toString(36).slice(2,9);
 
 const SAMPLE_POSITIONS = [
-  {id:"p1", symbol:"EUNL.DE", name:"iShares Core MSCI World UCITS ETF", shares:30, buyPrice:92.50, targetPct:60},
-  {id:"p2", symbol:"IS3N.DE", name:"iShares Core MSCI EM IMI UCITS ETF", shares:45, buyPrice:31.80, targetPct:25},
-  {id:"p3", symbol:"VWCE.DE", name:"Vanguard FTSE All-World UCITS ETF",  shares:10, buyPrice:118.40, targetPct:15},
+  {id:"p1", symbol:"EUNL.DE", name:"iShares Core MSCI World UCITS ETF", shares:30, buyPrice:92.50, buyDate:"2024-02-15", targetPct:60},
+  {id:"p2", symbol:"IS3N.DE", name:"iShares Core MSCI EM IMI UCITS ETF", shares:45, buyPrice:31.80, buyDate:"2024-11-04", targetPct:25},
+  {id:"p3", symbol:"VWCE.DE", name:"Vanguard FTSE All-World UCITS ETF",  shares:10, buyPrice:118.40, buyDate:"2025-09-22", targetPct:15},
 ];
-const DEFAULT_SETTINGS = {auto:60, proxyIndex:0, range:"3mo", chartMode:"total"};
+const DEFAULT_SETTINGS = {auto:60, proxyIndex:0, range:"3mo", chartMode:"total", chartBasis:"actual"};
 
 let session  = {user:null, key:null, cloud:false, uid:null};  // key: CryptoKey (AES-GCM, nur lokal)
 let userData = null;                   // {portfolios:[{id,name,positions}], active, settings}
@@ -770,6 +776,7 @@ function fxFactor(cur){
    Bei Tagesansichten wird nach Zeitstempel gruppiert, sonst nach Kalendertag. */
 function buildSeries(){
   const intraday = !!(state && rangeDef(state.settings.range).intraday);
+  const actual = !state || state.settings.chartBasis !== "synthetic";
   const keyOf = t => intraday ? String(t) : new Date(t*1000).toISOString().slice(0,10);
   const items = [];
   state.positions.forEach((p,i)=>{
@@ -784,6 +791,8 @@ function buildSeries(){
   if(!items.length) return null;
   const keys = [...new Set(items.flatMap(x=>[...x.map.keys()]))]
     .sort(intraday ? (a,b)=>(+a)-(+b) : undefined);
+  const dates = keys.map(k=> intraday ? new Date(+k*1000) : new Date(k+"T12:00:00"));
+  const days  = dates.map(d=> isoDay(d));   // Kalendertag je Punkt, für den Kaufdatums-Vergleich
   const perPos = items.map(x=>({p:x.p, color:COLORS[x.i%COLORS.length], vals:[]}));
   items.forEach((x,j)=>{
     let last = null;
@@ -792,17 +801,41 @@ function buildSeries(){
       perPos[j].vals.push(last);
     }
     const first = perPos[j].vals.find(v=>v!=null);
-    perPos[j].vals = perPos[j].vals.map(v=> (v==null?first:v) * x.f * x.p.shares);
+    perPos[j].vals = perPos[j].vals.map((v,idx)=>{
+      // "Tatsächlich": vor dem Kaufdatum war die Position noch nicht im Depot
+      if(actual && x.p.buyDate && days[idx] < x.p.buyDate) return 0;
+      return (v==null?first:v) * x.f * x.p.shares;
+    });
   });
   const totals = keys.map((k,idx)=> perPos.reduce((s,pp)=> s+pp.vals[idx], 0));
-  const dates = keys.map(k=> intraday ? new Date(+k*1000) : new Date(k+"T12:00:00"));
-  return {keys, dates, perPos, totals, intraday};
+
+  // Eingesetztes Kapital (gestrichelte Linie) – nur wenn alle Einstandskurse bekannt sind
+  const havePrices = items.every(x=> x.p.buyPrice>0);
+  const invested = (actual && havePrices)
+    ? days.map(day => items.reduce((s,x)=>
+        s + ((x.p.buyDate && day < x.p.buyDate) ? 0 : x.p.shares*x.p.buyPrice), 0))
+    : null;
+  const missingDates = actual ? items.filter(x=>!x.p.buyDate).map(x=>x.p.symbol) : [];
+  return {keys, dates, days, perPos, totals, intraday, actual, invested, missingDates};
 }
 
 function histPath(vals, x, y){
   let d = "M"+x(0).toFixed(1)+","+y(vals[0]).toFixed(1);
   for(let i=1;i<vals.length;i++) d += "L"+x(i).toFixed(1)+","+y(vals[i]).toFixed(1);
   return d;
+}
+
+function renderHistNote(){
+  const el = document.getElementById("histNote");
+  if(!el || !histData) return;
+  const base = histData.actual
+    ? "Tatsächlicher Verlauf: Jede Position zählt erst ab ihrem Kaufdatum."
+    : "Rückgerechnet: Das heutige Depot über den gesamten Zeitraum – zum Vergleich der Wertpapiere, kein realer Depotwert.";
+  const invNote = histData.invested ? " Gestrichelt: eingesetztes Kapital." : "";
+  const miss = histData.missingDates && histData.missingDates.length
+    ? ` <span style="color:var(--neg)">Ohne Kaufdatum (durchgehend gewertet): ${esc(histData.missingDates.join(", "))} – per ✎ ergänzen.</span>`
+    : "";
+  el.innerHTML = base + invNote + miss + " Fremdwährungen mit aktuellem Wechselkurs umgerechnet.";
 }
 
 function renderHistory(){
@@ -813,13 +846,15 @@ function renderHistory(){
     svg.style.display="none"; empty.style.display="block"; return;
   }
   svg.style.display="block"; empty.style.display="none";
+  renderHistNote();
   const stacked = state.settings.chartMode==="stacked";
+  const inv = histData.invested;
   const W=860,H=280,L=76,R=12,T=14,B=30, iw=W-L-R, ih=H-T-B;
   const n = histData.keys.length, totals = histData.totals;
-  let ymax = Math.max(...totals), ymin;
+  let ymax = Math.max(...totals, ...(inv||[])), ymin;
   if(stacked){ ymin = 0; ymax *= 1.05; }
   else{
-    ymin = Math.min(...totals);
+    ymin = Math.min(...totals, ...(inv||[]));
     const pad = (ymax-ymin)*0.08 || ymax*0.02 || 1;
     ymin = Math.max(0, ymin-pad); ymax += pad;
   }
@@ -853,6 +888,7 @@ function renderHistory(){
     g += `<path d="${d}" fill="#0d9488" fill-opacity="0.12"/>`;
     g += `<path d="${histPath(totals,x,y)}" fill="none" stroke="#0d9488" stroke-width="2"/>`;
   }
+  if(inv) g += `<path d="${histPath(inv,x,y)}" fill="none" stroke="#68778c" stroke-width="1.3" stroke-dasharray="5 4"/>`;
   g += `<line id="histCursor" x1="0" x2="0" y1="${T}" y2="${T+ih}" stroke="#68778c" stroke-dasharray="3 3" style="display:none"/>`;
   g += `<rect id="histHit" x="${L}" y="${T}" width="${iw}" height="${ih}" fill="transparent"/>`;
   svg.innerHTML = g;
@@ -873,10 +909,16 @@ function attachHistHover(svg, geo){
     let html = `<div style="font-weight:700;margin-bottom:4px">${esc(tipFormatter(histData)(histData.dates[i]))}</div>`;
     if(state.settings.chartMode==="stacked"){
       [...histData.perPos].reverse().forEach(pp=>{
+        if(histData.actual && pp.vals[i]===0) return;   // damals noch nicht im Depot
         html += `<div class="r"><span class="sw" style="background:${pp.color}"></span><span>${esc(pp.p.symbol)}</span><span class="v">${esc(fmtEUR.format(pp.vals[i]))}</span></div>`;
       });
     }
     html += `<div class="r" style="margin-top:4px;border-top:1px solid #e3e8ef;padding-top:4px"><span>Gesamt</span><span class="v">${esc(fmtEUR.format(histData.totals[i]))}</span></div>`;
+    if(histData.invested){
+      const d = histData.totals[i] - histData.invested[i];
+      html += `<div class="r"><span>Eingesetzt</span><span class="v">${esc(fmtEUR.format(histData.invested[i]))}</span></div>`;
+      html += `<div class="r"><span>Gewinn/Verlust</span><span class="v" style="color:${d>=0?"var(--pos)":"var(--neg)"}">${sign(d)}${esc(fmtEUR.format(d))}</span></div>`;
+    }
     tip.innerHTML = html;
     tip.style.display = "block";
     const px = geo.x(i)/geo.W*rect.width;
@@ -932,7 +974,7 @@ function renderPositions(){
       <td class="${day==null?"":day>=0?"pos":"neg"}">${day==null?"–":sign(day)+fmtPct.format(day)}</td>
       <td>${sparkline(q.spark)} ${q.m3!=null?`<span class="small ${q.m3>=0?"pos":"neg"}">${sign(q.m3)}${fmtPct.format(q.m3)}</span>`:""}</td>
       <td><strong>${eur(val)}</strong></td>
-      <td>${cost!=null?eur(cost):"–"}</td>
+      <td>${cost!=null?eur(cost):"–"}${p.buyDate?`<div class="s muted">seit ${esc(fmtDateLong.format(new Date(p.buyDate+"T12:00:00")))}</div>`:""}</td>
       <td class="${pl==null?"":pl>=0?"pos":"neg"}">${pl==null?"–":sign(pl)+eur(pl)}</td>
       <td>${weight!=null?fmtPct.format(weight):"–"}</td>
       <td>
@@ -1439,11 +1481,14 @@ function openModal(edit){
   document.getElementById("searchResults").className = "results";
   document.getElementById("sharesInput").value = "";
   document.getElementById("buyPriceInput").value = "";
+  document.getElementById("buyDateInput").value = "";
+  document.getElementById("buyDateInput").max = isoDay(new Date());
   if(editId){
     const p = state.positions.find(x=>x.id===editId);
     selSecurity = {symbol:p.symbol, name:p.name};
     document.getElementById("sharesInput").value = p.shares;
     document.getElementById("buyPriceInput").value = p.buyPrice||"";
+    document.getElementById("buyDateInput").value = p.buyDate||"";
     showDetails();
   } else {
     document.getElementById("searchPart").style.display = "";
@@ -1520,20 +1565,22 @@ document.getElementById("confirmAdd").onclick = ()=>{
   const shares = parseFloat(String(document.getElementById("sharesInput").value).replace(",","."));
   const bp = String(document.getElementById("buyPriceInput").value).replace(",",".");
   const buyPrice = bp==="" ? null : parseFloat(bp);
+  const buyDate = document.getElementById("buyDateInput").value || null;
   if(!(shares>0)){ document.getElementById("sharesInput").focus(); return; }
   if(editId){
     const p = state.positions.find(x=>x.id===editId);
-    p.shares = shares; p.buyPrice = buyPrice;
+    p.shares = shares; p.buyPrice = buyPrice; p.buyDate = buyDate;
   } else {
     const existing = state.positions.find(x=>x.symbol===selSecurity.symbol);
     if(existing){
-      // Position aufstocken: gewichteter Einstand
+      // Position aufstocken: gewichteter Einstand, frühestes Kaufdatum behalten
       if(buyPrice!=null && existing.buyPrice!=null)
         existing.buyPrice = (existing.shares*existing.buyPrice + shares*buyPrice)/(existing.shares+shares);
       else if(buyPrice!=null) existing.buyPrice = buyPrice;
+      if(buyDate && (!existing.buyDate || buyDate < existing.buyDate)) existing.buyDate = buyDate;
       existing.shares += shares;
     } else {
-      state.positions.push({id:uid(), symbol:selSecurity.symbol, name:selSecurity.name, shares, buyPrice, targetPct:null});
+      state.positions.push({id:uid(), symbol:selSecurity.symbol, name:selSecurity.name, shares, buyPrice, buyDate, targetPct:null});
     }
   }
   saveState();
@@ -1566,9 +1613,15 @@ function syncModeBtns(){
   const stacked = state.settings.chartMode==="stacked";
   modeTotalBtn.classList.toggle("active", !stacked);
   modeStackBtn.classList.toggle("active", stacked);
+  const actual = state.settings.chartBasis !== "synthetic";
+  document.getElementById("basisActual").classList.toggle("active", actual);
+  document.getElementById("basisSynth").classList.toggle("active", !actual);
 }
 modeTotalBtn.onclick = ()=>{ state.settings.chartMode="total";   saveState(); syncModeBtns(); renderHistory(); };
 modeStackBtn.onclick = ()=>{ state.settings.chartMode="stacked"; saveState(); syncModeBtns(); renderHistory(); };
+const basisActualBtn = document.getElementById("basisActual"), basisSynthBtn = document.getElementById("basisSynth");
+basisActualBtn.onclick = ()=>{ state.settings.chartBasis="actual";    saveState(); syncModeBtns(); renderHistory(); };
+basisSynthBtn.onclick  = ()=>{ state.settings.chartBasis="synthetic"; saveState(); syncModeBtns(); renderHistory(); };
 const rangeSel = document.getElementById("rangeSel");
 rangeSel.innerHTML = RANGE_DEFS.map(d=>`<option value="${d.v}">${d.label}</option>`).join("");
 rangeSel.onchange = ()=>{ state.settings.range = rangeSel.value; saveState(); updateTrendHeader(); refreshQuotes(); };
