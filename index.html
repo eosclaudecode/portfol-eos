@@ -25,7 +25,8 @@
   button.primary:hover{filter:brightness(1.08);color:#fff}
   button.danger:hover{border-color:var(--neg);color:var(--neg)}
   button:disabled{opacity:.5;cursor:default}
-  select,input[type=number],input[type=text],input[type=search]{font:inherit;border:1px solid var(--border);border-radius:10px;padding:8px 12px;background:#fff;color:var(--text);outline:none}
+  select,input[type=number],input[type=text],input[type=search],input[type=password],input[type=date]{
+    font:inherit;border:1px solid var(--border);border-radius:10px;padding:8px 12px;background:#fff;color:var(--text);outline:none}
   input:focus,select:focus{border-color:var(--accent)}
   .tabs{display:flex;gap:4px;background:#e9edf3;border-radius:12px;padding:4px;margin-bottom:20px;width:max-content}
   .tabs button{border:none;background:transparent;padding:8px 20px;font-weight:600;color:var(--muted)}
@@ -110,7 +111,7 @@
   footer{margin-top:30px;font-size:12.5px;color:var(--muted);text-align:center}
   /* Login */
   .login-card{max-width:420px;margin:8vh auto;background:var(--card);border:1px solid var(--border);border-radius:16px;padding:28px;box-shadow:var(--shadow)}
-  .login-card .field input{width:100%}
+  .login-card .field input{width:100%;display:block}
   /* Portfolio-Leiste */
   .pfbar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;background:var(--card);border:1px solid var(--border);
     border-radius:var(--radius);padding:10px 14px;margin-bottom:16px;box-shadow:var(--shadow)}
@@ -189,6 +190,7 @@ window.DEPOT_FIREBASE = {
   <div class="tabs">
     <button id="tabDepot" class="active">Depot</button>
     <button id="tabRebal">Rebalancing</button>
+    <button id="tabSim">Simulation</button>
   </div>
 
   <!-- ================= DEPOT TAB ================= -->
@@ -201,12 +203,7 @@ window.DEPOT_FIREBASE = {
           <button id="modeTotal">Gesamt</button>
           <button id="modeStack">Gestapelt</button>
         </div>
-        <select id="rangeSel">
-          <option value="1mo">1 Monat</option>
-          <option value="3mo">3 Monate</option>
-          <option value="6mo">6 Monate</option>
-          <option value="1y">1 Jahr</option>
-        </select>
+        <select id="rangeSel"></select>
       </div>
       <div style="padding:0 14px 6px;position:relative">
         <svg id="histChart" viewBox="0 0 860 280" style="width:100%;height:auto;display:block"></svg>
@@ -298,6 +295,43 @@ window.DEPOT_FIREBASE = {
     </div>
   </section>
 
+  <!-- ================= SIMULATION TAB ================= -->
+  <section id="viewSim" style="display:none">
+    <div class="panel">
+      <h2>Einmalanlage simulieren</h2>
+      <p class="pad small muted" style="padding-bottom:0">
+        Was wäre aus einem einmalig investierten Betrag geworden – und was könnte daraus werden?
+        <strong>Dein Depot wird dabei nicht verändert.</strong></p>
+      <div class="pad flex" style="align-items:flex-end">
+        <div class="field" style="margin:0"><label>Kaufdatum</label>
+          <input type="date" id="simDate"></div>
+        <div class="field" style="margin:0"><label>Betrag (€)</label>
+          <input type="number" id="simAmount" min="0" step="500" value="10000" style="width:130px"></div>
+        <div class="field" style="margin:0"><label>Aufteilung</label>
+          <select id="simMode">
+            <option value="current">Wie aktuelles Depot</option>
+            <option value="target">Wie Zielgewichtung</option>
+            <option value="equal">Gleichverteilt</option>
+            <option value="custom">Eigene Auswahl …</option>
+          </select></div>
+        <div class="spacer"></div>
+        <button id="simRun" class="primary">Simulation starten</button>
+      </div>
+      <div id="simWeights" style="display:none">
+        <div style="overflow-x:auto">
+          <table>
+            <thead><tr><th>Wertpapier</th><th>Dabei</th><th>Anteil %</th></tr></thead>
+            <tbody id="simWeightBody"></tbody>
+            <tfoot><tr><td style="font-weight:700">Summe</td><td></td><td id="simWeightSum"></td></tr></tfoot>
+          </table>
+        </div>
+      </div>
+      <div class="pad small muted" style="padding-top:0">
+        Tipp: Im Depot-Chart auf eine Stelle klicken übernimmt das Datum hierher.</div>
+    </div>
+    <div id="simOut"></div>
+  </section>
+
   <footer>Kursdaten: Yahoo Finance (ohne Gewähr, ggf. 15 min verzögert) · Alle Daten bleiben lokal und verschlüsselt in deinem Browser · Keine Anlageberatung</footer>
   </div><!-- /appUI -->
 </div>
@@ -371,7 +405,7 @@ let state    = null;                   // Sicht auf aktives Portfolio: {position
 let quotes = {};   // symbol -> {price, prevClose, currency, priceEUR, prevEUR, spark:[], times:[], m3, err}
 let fxRates = {};  // "USD" -> EUR je 1 USD
 let refreshTimer = null;
-let fetching = false;
+let fetching = false, pendingRefresh = false;
 
 /* --- Cloud-Modus (Firebase), aktiv sobald oben apiKey + projectId eingetragen sind --- */
 const FB_CFG = (window.DEPOT_FIREBASE && window.DEPOT_FIREBASE.apiKey && window.DEPOT_FIREBASE.projectId)
@@ -533,22 +567,48 @@ async function fetchJSON(url){
   throw lastErr || new Error("Alle Datenquellen fehlgeschlagen");
 }
 
-async function fetchChart(symbol, range="3mo"){
-  const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?range=${range}&interval=1d`;
+/* Auswählbare Zeiträume. Yahoo kennt nur bestimmte range-Werte –
+   Zwischenstufen (2 Wochen, 3 Jahre …) holen wir größer und schneiden zu (trimDays). */
+const RANGE_DEFS = [
+  {v:"1d",  label:"1 Tag",    short:"1 T",  range:"1d",  interval:"5m",  intraday:true},
+  {v:"5d",  label:"1 Woche",  short:"1 W",  range:"5d",  interval:"30m", intraday:true},
+  {v:"1mo", label:"1 Monat",  short:"1 M",  range:"1mo", interval:"1d"},
+  {v:"3mo", label:"3 Monate", short:"3 M",  range:"3mo", interval:"1d"},
+  {v:"6mo", label:"6 Monate", short:"6 M",  range:"6mo", interval:"1d"},
+  {v:"ytd", label:"Lfd. Jahr",short:"YTD",  range:"ytd", interval:"1d"},
+  {v:"1y",  label:"1 Jahr",   short:"1 J",  range:"1y",  interval:"1d"},
+  {v:"2y",  label:"2 Jahre",  short:"2 J",  range:"2y",  interval:"1d"},
+  {v:"3y",  label:"3 Jahre",  short:"3 J",  range:"5y",  interval:"1d",  trimDays:365*3},
+  {v:"5y",  label:"5 Jahre",  short:"5 J",  range:"5y",  interval:"1wk"},
+  {v:"10y", label:"10 Jahre", short:"10 J", range:"10y", interval:"1wk"},
+  {v:"max", label:"Maximum",  short:"Max",  range:"max", interval:"1mo"},
+];
+const rangeDef = v => RANGE_DEFS.find(d=>d.v===v) || RANGE_DEFS[3];
+
+async function fetchChart(symbol, rangeKey="3mo"){
+  const def = rangeDef(rangeKey);
+  const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}`
+            + `?range=${def.range}&interval=${def.interval}`;
   const data = await fetchJSON(url);
   const r = data && data.chart && data.chart.result && data.chart.result[0];
   if(!r || !r.meta) throw new Error("Keine Daten für " + symbol);
   const meta = r.meta;
   const closesRaw = ((r.indicators||{}).quote||[{}])[0].close || [];
   const ts = r.timestamp || [];
+  const cutoff = def.trimDays ? Date.now()/1000 - def.trimDays*86400 : null;
   const spark = [], times = [];
-  closesRaw.forEach((v,i)=>{ if(v!=null && ts[i]!=null){ spark.push(v); times.push(ts[i]); } });
+  closesRaw.forEach((v,i)=>{
+    if(v==null || ts[i]==null) return;
+    if(cutoff && ts[i] < cutoff) return;
+    spark.push(v); times.push(ts[i]);
+  });
   const price = meta.regularMarketPrice != null ? meta.regularMarketPrice : spark[spark.length-1];
   let prev = meta.previousClose != null ? meta.previousClose
            : (meta.chartPreviousClose != null ? meta.chartPreviousClose : null);
   if(prev == null && spark.length >= 2) prev = spark[spark.length-2];
-  const m3 = spark.length >= 2 ? (price/spark[0] - 1) : null;
-  return {price, prevClose:prev, currency:(meta.currency||"EUR"), spark, times, m3, name:(meta.longName||meta.shortName||null)};
+  const m3 = spark.length >= 2 ? (price/spark[0] - 1) : null;   // Veränderung über den gewählten Zeitraum
+  return {price, prevClose:prev, currency:(meta.currency||"EUR"), spark, times, m3,
+          intraday: !!def.intraday, name:(meta.longName||meta.shortName||null)};
 }
 
 async function fetchFx(cur){
@@ -570,7 +630,8 @@ function toEUR(value, currency){
 
 async function refreshQuotes(){
   if(!state) return;
-  if(fetching || state.positions.length===0){ render(); return; }
+  if(fetching){ pendingRefresh = true; return; }   // z. B. Zeitraumwechsel während des Ladens
+  if(state.positions.length===0){ render(); return; }
   fetching = true;
   setStatus('<span class="spin"></span> Kurse werden geladen …');
   const results = await Promise.allSettled(state.positions.map(p => fetchChart(p.symbol, state.settings.range||"3mo")));
@@ -604,6 +665,7 @@ async function refreshQuotes(){
   });
   saveState();
   fetching = false;
+  if(pendingRefresh){ pendingRefresh = false; return refreshQuotes(); }  // zwischenzeitlich angeforderter Lauf
   const errs = state.positions.filter(p => quotes[p.symbol] && quotes[p.symbol].err).length;
   const time = new Date().toLocaleTimeString("de-DE",{hour:"2-digit",minute:"2-digit",second:"2-digit"});
   setStatus(errs ? `⚠ ${errs} Kurs(e) fehlgeschlagen · ${time}` : `Stand: ${time}`);
@@ -682,6 +744,20 @@ function render(){
 const fmtEUR0 = new Intl.NumberFormat("de-DE",{style:"currency",currency:"EUR",maximumFractionDigits:0});
 const fmtDateLong  = new Intl.DateTimeFormat("de-DE",{day:"2-digit",month:"2-digit",year:"numeric"});
 const fmtDateShort = new Intl.DateTimeFormat("de-DE",{day:"2-digit",month:"2-digit"});
+const fmtTimeShort = new Intl.DateTimeFormat("de-DE",{hour:"2-digit",minute:"2-digit"});
+const fmtMonthYear = new Intl.DateTimeFormat("de-DE",{month:"2-digit",year:"2-digit"});
+const fmtDateTime  = new Intl.DateTimeFormat("de-DE",{day:"2-digit",month:"2-digit",year:"numeric",hour:"2-digit",minute:"2-digit"});
+const isoDay = d => new Date(d.getTime() - d.getTimezoneOffset()*60000).toISOString().slice(0,10);
+/* Achsenbeschriftung passend zur Spannweite: Uhrzeit / Tag+Monat / Monat+Jahr */
+function axisFormatter(data){
+  if(data.intraday){
+    const sameDay = data.dates[0].toDateString() === data.dates[data.dates.length-1].toDateString();
+    return sameDay ? (d=>fmtTimeShort.format(d)) : (d=>fmtDateShort.format(d)+" "+fmtTimeShort.format(d));
+  }
+  const spanDays = (data.dates[data.dates.length-1] - data.dates[0]) / 86400000;
+  return spanDays > 400 ? (d=>fmtMonthYear.format(d)) : (d=>fmtDateShort.format(d));
+}
+const tipFormatter = data => data.intraday ? (d=>fmtDateTime.format(d)+" Uhr") : (d=>fmtDateLong.format(d));
 let histData = null;
 
 function fxFactor(cur){
@@ -690,8 +766,11 @@ function fxFactor(cur){
   return fxRates[cur]!=null ? fxRates[cur] : null;
 }
 
-/* Zeitreihen aller Positionen auf gemeinsame Handelstage bringen (Lücken: letzter Wert) */
+/* Zeitreihen aller Positionen auf gemeinsame Zeitpunkte bringen (Lücken: letzter Wert).
+   Bei Tagesansichten wird nach Zeitstempel gruppiert, sonst nach Kalendertag. */
 function buildSeries(){
+  const intraday = !!(state && rangeDef(state.settings.range).intraday);
+  const keyOf = t => intraday ? String(t) : new Date(t*1000).toISOString().slice(0,10);
   const items = [];
   state.positions.forEach((p,i)=>{
     const q = quotes[p.symbol];
@@ -699,11 +778,12 @@ function buildSeries(){
     const f = fxFactor(q.currency);
     if(f==null) return;
     const map = new Map();
-    q.times.forEach((t,k)=> map.set(new Date(t*1000).toISOString().slice(0,10), q.spark[k]));
+    q.times.forEach((t,k)=> map.set(keyOf(t), q.spark[k]));
     items.push({p, i, map, f});
   });
   if(!items.length) return null;
-  const keys = [...new Set(items.flatMap(x=>[...x.map.keys()]))].sort();
+  const keys = [...new Set(items.flatMap(x=>[...x.map.keys()]))]
+    .sort(intraday ? (a,b)=>(+a)-(+b) : undefined);
   const perPos = items.map(x=>({p:x.p, color:COLORS[x.i%COLORS.length], vals:[]}));
   items.forEach((x,j)=>{
     let last = null;
@@ -715,7 +795,8 @@ function buildSeries(){
     perPos[j].vals = perPos[j].vals.map(v=> (v==null?first:v) * x.f * x.p.shares);
   });
   const totals = keys.map((k,idx)=> perPos.reduce((s,pp)=> s+pp.vals[idx], 0));
-  return {keys, dates:keys.map(k=>new Date(k+"T12:00:00")), perPos, totals};
+  const dates = keys.map(k=> intraday ? new Date(+k*1000) : new Date(k+"T12:00:00"));
+  return {keys, dates, perPos, totals, intraday};
 }
 
 function histPath(vals, x, y){
@@ -750,10 +831,11 @@ function renderHistory(){
     g += `<line x1="${L}" x2="${W-R}" y1="${yy}" y2="${yy}" stroke="#e3e8ef"/>`;
     g += `<text x="${L-8}" y="${yy+4}" text-anchor="end" font-size="11" fill="#68778c">${esc(fmtEUR0.format(v))}</text>`;
   }
+  const axisFmt = axisFormatter(histData);
   const nl = Math.min(5,n);
   for(let k=0;k<nl;k++){
     const i = Math.round(k*(n-1)/(nl-1));
-    g += `<text x="${x(i)}" y="${H-8}" text-anchor="middle" font-size="11" fill="#68778c">${esc(fmtDateShort.format(histData.dates[i]))}</text>`;
+    g += `<text x="${x(i)}" y="${H-8}" text-anchor="middle" font-size="11" fill="#68778c">${esc(axisFmt(histData.dates[i]))}</text>`;
   }
   if(stacked){
     let base = new Array(n).fill(0);
@@ -788,7 +870,7 @@ function attachHistHover(svg, geo){
     i = Math.max(0, Math.min(geo.n-1, i));
     cur.setAttribute("x1", geo.x(i)); cur.setAttribute("x2", geo.x(i));
     cur.style.display = "";
-    let html = `<div style="font-weight:700;margin-bottom:4px">${esc(fmtDateLong.format(histData.dates[i]))}</div>`;
+    let html = `<div style="font-weight:700;margin-bottom:4px">${esc(tipFormatter(histData)(histData.dates[i]))}</div>`;
     if(state.settings.chartMode==="stacked"){
       [...histData.perPos].reverse().forEach(pp=>{
         html += `<div class="r"><span class="sw" style="background:${pp.color}"></span><span>${esc(pp.p.symbol)}</span><span class="v">${esc(fmtEUR.format(pp.vals[i]))}</span></div>`;
@@ -802,6 +884,15 @@ function attachHistHover(svg, geo){
     tip.style.top = "8px";
   });
   hit.addEventListener("mouseleave", ()=>{ tip.style.display="none"; cur.style.display="none"; });
+  // Klick übernimmt das Datum in die Simulation
+  hit.addEventListener("click", ev=>{
+    if(!histData) return;
+    const rect = svg.getBoundingClientRect();
+    const vx = (ev.clientX-rect.left)*geo.W/rect.width;
+    let i = Math.round((vx-geo.L)/geo.iw*(geo.n-1));
+    i = Math.max(0, Math.min(geo.n-1, i));
+    useDateForSim(histData.dates[i]);
+  });
 }
 
 function renderKPIs(){
@@ -1003,6 +1094,329 @@ document.getElementById("calcBtn").onclick = ()=>{
     </div>`;
 };
 
+/* ============================================================
+   Simulation: Einmalanlage (Lump Sum) – rein lesend, verändert
+   weder Depot noch gespeicherte Nutzerdaten.
+   ============================================================ */
+const simDateEl = document.getElementById("simDate");
+const simAmountEl = document.getElementById("simAmount");
+const simModeEl = document.getElementById("simMode");
+let simHistCache = {};   // "symbol|range|interval" -> Rohdaten
+let lastSim = null;      // Ergebnis der letzten Simulation (nur im Speicher)
+
+function initSimDefaults(){
+  const today = new Date();
+  simDateEl.max = isoDay(today);
+  if(!simDateEl.value){
+    const d = new Date(today); d.setFullYear(d.getFullYear()-3);
+    simDateEl.value = isoDay(d);
+  }
+}
+function useDateForSim(date){
+  simDateEl.value = isoDay(date);
+  showTab("sim");
+  simDateEl.focus();
+}
+
+/* Auswahl + Gewichte */
+function simSelection(){
+  const mode = simModeEl.value;
+  const pos = state.positions;
+  if(mode==="custom"){
+    return [...document.querySelectorAll("#simWeightBody tr")].map(tr=>{
+      const id = tr.dataset.id, p = pos.find(x=>x.id===id);
+      const on = tr.querySelector("input[type=checkbox]").checked;
+      const w  = parseFloat(String(tr.querySelector("input[type=number]").value).replace(",",".")) || 0;
+      return {p, w: on ? w : 0};
+    }).filter(x=>x.p && x.w>0);
+  }
+  if(mode==="target") return pos.map(p=>({p, w:+p.targetPct||0})).filter(x=>x.w>0);
+  if(mode==="equal")  return pos.map(p=>({p, w:100/pos.length}));
+  const {total} = totals();  // aktuelles Depot
+  if(total>0) return pos.map(p=>({p, w:(posValue(p)||0)/total*100})).filter(x=>x.w>0);
+  return pos.map(p=>({p, w:100/pos.length}));
+}
+function renderSimWeights(){
+  const show = simModeEl.value==="custom";
+  document.getElementById("simWeights").style.display = show ? "" : "none";
+  if(!show) return;
+  const body = document.getElementById("simWeightBody");
+  const n = state.positions.length || 1;
+  body.innerHTML = state.positions.map(p=>`
+    <tr data-id="${esc(p.id)}">
+      <td class="name-cell"><div class="n">${esc(p.name||p.symbol)}</div><div class="s">${esc(p.symbol)}</div></td>
+      <td><input type="checkbox" checked onchange="updateSimSum()"></td>
+      <td><input type="number" class="target-input" min="0" max="100" step="1"
+           value="${Math.round(1000/n)/10}" onchange="updateSimSum()"> %</td>
+    </tr>`).join("");
+  updateSimSum();
+}
+window.updateSimSum = ()=>{
+  const sum = simSelection().reduce((s,x)=>s+x.w,0);
+  const el = document.getElementById("simWeightSum");
+  el.textContent = fmtPct2.format(sum)+" %";
+  el.className = Math.abs(sum-100)<0.01 ? "sum-ok" : "sum-bad";
+};
+simModeEl.onchange = renderSimWeights;
+
+/* Kursdaten für die Simulation (eigener Cache, unabhängig vom Depot) */
+async function fetchHistory(symbol, range, interval){
+  const key = symbol+"|"+range+"|"+interval;
+  if(simHistCache[key]) return simHistCache[key];
+  const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}`
+            + `?range=${range}&interval=${interval}`;
+  const data = await fetchJSON(url);
+  const r = data && data.chart && data.chart.result && data.chart.result[0];
+  if(!r || !r.meta) throw new Error("Keine Daten für " + symbol);
+  const closes = ((r.indicators||{}).quote||[{}])[0].close || [];
+  const ts = r.timestamp || [];
+  const out = {times:[], closes:[], currency:(r.meta.currency||"EUR")};
+  closes.forEach((v,i)=>{ if(v!=null && ts[i]!=null){ out.times.push(ts[i]); out.closes.push(v); } });
+  if(r.meta.regularMarketPrice!=null && out.closes.length){   // aktuellen Kurs ans Ende setzen
+    out.closes[out.closes.length-1] = r.meta.regularMarketPrice;
+  }
+  simHistCache[key] = out;
+  return out;
+}
+function pickSimRange(startDate){
+  const days = (Date.now()-startDate.getTime())/86400000;
+  const opts = [["1mo",31,"1d"],["3mo",93,"1d"],["6mo",186,"1d"],["1y",372,"1d"],
+                ["2y",744,"1d"],["5y",1830,"1d"],["10y",3660,"1wk"],["max",1e9,"1mo"]];
+  const hit = opts.find(o=>o[1]>=days) || opts[opts.length-1];
+  return {range:hit[0], interval:hit[2]};
+}
+
+const CAGR = (endV, startV, years) => years>0.05 && startV>0 ? Math.pow(endV/startV, 1/years)-1 : null;
+
+document.getElementById("simRun").onclick = runSimulation;
+
+async function runSimulation(){
+  const out = document.getElementById("simOut");
+  const warn = html => out.innerHTML = `<div class="panel"><div class="warn-box" style="margin:16px 18px">${html}</div></div>`;
+  const sel = simSelection();
+  if(!sel.length){ warn("Keine Wertpapiere ausgewählt. Bitte Aufteilung prüfen."); return; }
+  const amount = parseFloat(String(simAmountEl.value).replace(",",".")) || 0;
+  if(amount<=0){ warn("Bitte einen Betrag größer als 0 € eingeben."); return; }
+  if(!simDateEl.value){ warn("Bitte ein Kaufdatum wählen."); return; }
+  const t0 = new Date(simDateEl.value+"T00:00:00");
+  if(t0.getTime() > Date.now()){ warn("Das Kaufdatum liegt in der Zukunft. Bitte ein vergangenes Datum wählen – die Zukunft deckt die Prognose unten ab."); return; }
+  const wSum = sel.reduce((s,x)=>s+x.w,0);
+  const weights = sel.map(x=>x.w/wSum);   // automatisch auf 100 % normiert
+
+  out.innerHTML = `<div class="panel"><div class="pad muted"><span class="spin"></span> Historische Kurse werden geladen …</div></div>`;
+  const {range, interval} = pickSimRange(t0);
+  let hist;
+  try{
+    hist = await Promise.all(sel.map(x=> fetchHistory(x.p.symbol, range, interval)));
+  }catch(e){ warn("Kursdaten konnten nicht geladen werden: "+esc(String(e.message||e))); return; }
+
+  // Wechselkurse für Fremdwährungen sicherstellen
+  for(const h of hist){
+    let c = h.currency; if(c==="GBp"||c==="GBX") c="GBP";
+    if(c && c!=="EUR" && !fxRates[c]){ try{ fxRates[c] = await fetchFx(c); }catch(e){} }
+  }
+  const factors = hist.map(h=> fxFactor(h.currency));
+  const noFx = factors.map((f,i)=> f==null ? sel[i].p.symbol : null).filter(Boolean);
+  if(noFx.length){ warn("Kein Wechselkurs verfügbar für: "+esc(noFx.join(", "))); return; }
+
+  // Tagesreihen ab Kaufdatum aufbauen
+  const startKey = isoDay(t0);
+  const maps = hist.map((h,i)=>{
+    const m = new Map();
+    h.times.forEach((t,k)=>{
+      const day = new Date(t*1000).toISOString().slice(0,10);
+      if(day >= startKey) m.set(day, h.closes[k]*factors[i]);
+    });
+    return m;
+  });
+  const late = maps.map((m,i)=>{
+    const first = [...m.keys()].sort()[0];
+    return (!first) ? {sym:sel[i].p.symbol, first:null}
+         : (new Date(first) - t0 > 10*86400000 ? {sym:sel[i].p.symbol, first} : null);
+  }).filter(Boolean);
+  if(late.length){
+    warn("Für " + esc(late.map(l=>l.sym).join(", ")) + " liegen zu diesem Datum noch keine Kurse vor"
+       + (late[0].first ? " (frühestens ab "+esc(fmtDateLong.format(new Date(late[0].first)))+")" : "")
+       + ". Bitte ein späteres Datum wählen.");
+    return;
+  }
+  const keys = [...new Set(maps.flatMap(m=>[...m.keys()]))].sort();
+  if(keys.length<2){ warn("Zu wenige Kursdaten für diesen Zeitraum."); return; }
+
+  const perPos = sel.map((x,i)=>({p:x.p, weight:weights[i], color:COLORS[i%COLORS.length], prices:[]}));
+  maps.forEach((m,i)=>{
+    let last = null;
+    for(const k of keys){ if(m.has(k)) last = m.get(k); perPos[i].prices.push(last); }
+    const first = perPos[i].prices.find(v=>v!=null);
+    perPos[i].prices = perPos[i].prices.map(v=> v==null?first:v);
+  });
+  perPos.forEach(pp=>{
+    pp.buyPrice = pp.prices[0];
+    pp.shares   = pp.buyPrice>0 ? amount*pp.weight/pp.buyPrice : 0;
+    pp.vals     = pp.prices.map(v=> v*pp.shares);
+  });
+  const totalsArr = keys.map((k,i)=> perPos.reduce((s,pp)=> s+pp.vals[i], 0));
+  const dates = keys.map(k=> new Date(k+"T12:00:00"));
+  const years = (dates[dates.length-1]-dates[0])/(365.25*86400000);
+  const endVal = totalsArr[totalsArr.length-1];
+
+  lastSim = {amount, dates, keys, perPos, totals:totalsArr, years, endVal, intraday:false};
+  renderSimResult();
+}
+
+function renderSimResult(){
+  const s = lastSim; if(!s) return;
+  const gain = s.endVal - s.amount, pct = s.endVal/s.amount - 1;
+  const cagr = CAGR(s.endVal, s.amount, s.years);
+  const best = Math.max(...s.totals), worst = Math.min(...s.totals);
+  const defRate = cagr!=null ? Math.round(cagr*1000)/10 : 6;
+  document.getElementById("simOut").innerHTML = `
+    <div class="cards">
+      <div class="card"><div class="lbl">Investiert am ${esc(fmtDateLong.format(s.dates[0]))}</div>
+        <div class="val">${esc(fmtEUR.format(s.amount))}</div></div>
+      <div class="card"><div class="lbl">Wert heute</div><div class="val">${esc(fmtEUR.format(s.endVal))}</div>
+        <div class="sub muted">nach ${fmtPct2.format(s.years)} Jahren</div></div>
+      <div class="card"><div class="lbl">Gewinn / Verlust</div>
+        <div class="val ${gain>=0?"pos":"neg"}">${sign(gain)}${esc(fmtEUR.format(gain))}</div>
+        <div class="sub ${gain>=0?"pos":"neg"}">${sign(pct)}${fmtPct.format(pct)}</div></div>
+      <div class="card"><div class="lbl">Rendite p. a.</div>
+        <div class="val ${cagr!=null&&cagr>=0?"pos":cagr!=null?"neg":""}">${cagr!=null?sign(cagr)+fmtPct.format(cagr):"–"}</div>
+        <div class="sub muted">Spanne: ${esc(fmtEUR0.format(worst))} – ${esc(fmtEUR0.format(best))}</div></div>
+    </div>
+
+    <div class="panel">
+      <h2>Wertentwicklung der Einmalanlage</h2>
+      <div style="padding:0 14px 6px;position:relative">
+        <svg id="simChart" viewBox="0 0 860 280" style="width:100%;height:auto;display:block"></svg>
+        <div id="simTip" class="tip"></div>
+      </div>
+      <div class="pad small muted" style="padding-top:0">
+        Gestrichelt: der eingesetzte Betrag. Fremdwährungen mit dem aktuellen Wechselkurs umgerechnet;
+        Ausschüttungen und Kosten sind nicht berücksichtigt.</div>
+    </div>
+
+    <div class="panel">
+      <h2>Aufteilung der Anlage</h2>
+      <div style="overflow-x:auto"><table>
+        <thead><tr><th>Wertpapier</th><th>Anteil</th><th>Einsatz</th><th>Kurs damals</th><th>Stück</th><th>Kurs heute</th><th>Wert heute</th><th>+/−</th></tr></thead>
+        <tbody>${s.perPos.map(pp=>{
+          const inv = s.amount*pp.weight, now = pp.vals[pp.vals.length-1], g = now-inv;
+          return `<tr>
+            <td class="name-cell"><div class="n"><span class="sw" style="display:inline-block;width:9px;height:9px;border-radius:3px;background:${pp.color};margin-right:6px"></span>${esc(pp.p.name||pp.p.symbol)}</div>
+              <div class="s">${esc(pp.p.symbol)}</div></td>
+            <td>${fmtPct.format(pp.weight)}</td>
+            <td>${esc(fmtEUR.format(inv))}</td>
+            <td>${esc(fmtEUR.format(pp.buyPrice))}</td>
+            <td>${fmtNum.format(Math.round(pp.shares*10000)/10000)}</td>
+            <td>${esc(fmtEUR.format(pp.prices[pp.prices.length-1]))}</td>
+            <td><strong>${esc(fmtEUR.format(now))}</strong></td>
+            <td class="${g>=0?"pos":"neg"}">${sign(g)}${esc(fmtEUR.format(g))}</td>
+          </tr>`;}).join("")}</tbody>
+      </table></div>
+    </div>
+
+    <div class="panel">
+      <h2>Prognose ab heute</h2>
+      <div class="pad flex" style="align-items:flex-end">
+        <div class="field" style="margin:0"><label>Angenommene Rendite (% p. a.)</label>
+          <input type="number" id="projRate" step="0.5" value="${defRate}" style="width:110px" onchange="renderProjection()"></div>
+        <div class="field" style="margin:0"><label>Zeitraum (Jahre)</label>
+          <input type="number" id="projYears" min="1" max="50" step="1" value="10" style="width:100px" onchange="renderProjection()"></div>
+        <div class="field" style="margin:0"><label>Monatlich zusätzlich (€)</label>
+          <input type="number" id="projMonthly" min="0" step="50" value="0" style="width:120px" onchange="renderProjection()"></div>
+      </div>
+      <div id="projOut"></div>
+      <div class="pad small muted" style="padding-top:0">
+        Rechenbeispiel mit konstanter Rendite – keine Vorhersage. Tatsächliche Kurse schwanken,
+        Vergangenheitswerte sind kein Indikator für die Zukunft.</div>
+    </div>`;
+  drawSimChart();
+  renderProjection();
+}
+
+window.renderProjection = ()=>{
+  const s = lastSim; if(!s) return;
+  const rate = (parseFloat(String(document.getElementById("projRate").value).replace(",","."))||0)/100;
+  const yrs  = Math.max(1, Math.min(50, parseInt(document.getElementById("projYears").value)||10));
+  const mon  = Math.max(0, parseFloat(String(document.getElementById("projMonthly").value).replace(",","."))||0);
+  const rows = [];
+  for(const y of [1,3,5,10,15,20,25,30,40,50].filter(y=>y<=yrs).concat(yrs)){
+    if(rows.some(r=>r.y===y)) continue;
+    const growth = Math.pow(1+rate, y);
+    // Einmalanlage + monatliche Sparrate (nachschüssig, monatlich verzinst)
+    const rm = Math.pow(1+rate, 1/12)-1;
+    const months = y*12;
+    const savings = mon>0 ? (Math.abs(rm)<1e-9 ? mon*months : mon*((Math.pow(1+rm,months)-1)/rm)) : 0;
+    const val = s.endVal*growth + savings;
+    const paid = s.amount + mon*months;
+    rows.push({y, val, paid});
+  }
+  rows.sort((a,b)=>a.y-b.y);
+  document.getElementById("projOut").innerHTML = `
+    <div style="overflow-x:auto"><table>
+      <thead><tr><th>In … Jahren</th><th>Eingezahlt gesamt</th><th>Erwarteter Wert</th><th>Davon Kursgewinn</th></tr></thead>
+      <tbody>${rows.map(r=>`<tr>
+        <td>${r.y} ${r.y===1?"Jahr":"Jahre"}</td>
+        <td>${esc(fmtEUR0.format(r.paid))}</td>
+        <td><strong>${esc(fmtEUR0.format(r.val))}</strong></td>
+        <td class="${r.val-r.paid>=0?"pos":"neg"}">${sign(r.val-r.paid)}${esc(fmtEUR0.format(r.val-r.paid))}</td>
+      </tr>`).join("")}</tbody>
+    </table></div>`;
+};
+
+function drawSimChart(){
+  const s = lastSim; if(!s) return;
+  const svg = document.getElementById("simChart"); if(!svg) return;
+  const W=860,H=280,L=76,R=12,T=14,B=30, iw=W-L-R, ih=H-T-B;
+  const n = s.totals.length;
+  let ymax = Math.max(...s.totals, s.amount), ymin = Math.min(...s.totals, s.amount);
+  const pad = (ymax-ymin)*0.08 || ymax*0.02 || 1;
+  ymin = Math.max(0, ymin-pad); ymax += pad;
+  const x = i => L + i/(n-1)*iw;
+  const y = v => T + ih - (v-ymin)/((ymax-ymin)||1)*ih;
+  let g = "";
+  for(let k=0;k<=4;k++){
+    const v = ymin + (ymax-ymin)*k/4, yy = y(v);
+    g += `<line x1="${L}" x2="${W-R}" y1="${yy}" y2="${yy}" stroke="#e3e8ef"/>`;
+    g += `<text x="${L-8}" y="${yy+4}" text-anchor="end" font-size="11" fill="#68778c">${esc(fmtEUR0.format(v))}</text>`;
+  }
+  const axisFmt = axisFormatter(s);
+  const nl = Math.min(5,n);
+  for(let k=0;k<nl;k++){
+    const i = Math.round(k*(n-1)/(nl-1));
+    g += `<text x="${x(i)}" y="${H-8}" text-anchor="middle" font-size="11" fill="#68778c">${esc(axisFmt(s.dates[i]))}</text>`;
+  }
+  const up = s.endVal >= s.amount, col = up ? "#16a34a" : "#dc2626";
+  let area = histPath(s.totals,x,y) + `L${x(n-1).toFixed(1)},${y(s.amount).toFixed(1)}L${x(0).toFixed(1)},${y(s.amount).toFixed(1)}Z`;
+  g += `<path d="${area}" fill="${col}" fill-opacity="0.12"/>`;
+  g += `<line x1="${L}" x2="${W-R}" y1="${y(s.amount)}" y2="${y(s.amount)}" stroke="#68778c" stroke-width="1.2" stroke-dasharray="5 4"/>`;
+  g += `<path d="${histPath(s.totals,x,y)}" fill="none" stroke="${col}" stroke-width="2"/>`;
+  g += `<line id="simCursor" x1="0" x2="0" y1="${T}" y2="${T+ih}" stroke="#68778c" stroke-dasharray="3 3" style="display:none"/>`;
+  g += `<rect id="simHit" x="${L}" y="${T}" width="${iw}" height="${ih}" fill="transparent"/>`;
+  svg.innerHTML = g;
+
+  const hit = svg.querySelector("#simHit"), cur = svg.querySelector("#simCursor"), tip = document.getElementById("simTip");
+  hit.addEventListener("mousemove", ev=>{
+    const rect = svg.getBoundingClientRect();
+    const vx = (ev.clientX-rect.left)*W/rect.width;
+    let i = Math.round((vx-L)/iw*(n-1));
+    i = Math.max(0, Math.min(n-1, i));
+    cur.setAttribute("x1", x(i)); cur.setAttribute("x2", x(i)); cur.style.display = "";
+    const v = s.totals[i], d = v - s.amount;
+    let html = `<div style="font-weight:700;margin-bottom:4px">${esc(fmtDateLong.format(s.dates[i]))}</div>`;
+    s.perPos.forEach(pp=>{
+      html += `<div class="r"><span class="sw" style="background:${pp.color}"></span><span>${esc(pp.p.symbol)}</span><span class="v">${esc(fmtEUR.format(pp.vals[i]))}</span></div>`;
+    });
+    html += `<div class="r" style="margin-top:4px;border-top:1px solid #e3e8ef;padding-top:4px"><span>Gesamt</span><span class="v">${esc(fmtEUR.format(v))}</span></div>`;
+    html += `<div class="r"><span>ggü. Einsatz</span><span class="v" style="color:${d>=0?"var(--pos)":"var(--neg)"}">${sign(d)}${esc(fmtEUR.format(d))}</span></div>`;
+    tip.innerHTML = html; tip.style.display = "block";
+    const px = x(i)/W*rect.width;
+    tip.style.left = Math.min(rect.width - tip.offsetWidth - 4, Math.max(4, px+12)) + "px";
+    tip.style.top = "8px";
+  });
+  hit.addEventListener("mouseleave", ()=>{ tip.style.display="none"; cur.style.display="none"; });
+}
+
 /* ---------- Positionen verwalten ---------- */
 window.removePos = id=>{
   const p = state.positions.find(x=>x.id===id);
@@ -1129,11 +1543,19 @@ document.getElementById("confirmAdd").onclick = ()=>{
 };
 
 /* ---------- Tabs / Toolbar ---------- */
-const tabDepot=document.getElementById("tabDepot"), tabRebal=document.getElementById("tabRebal");
-tabDepot.onclick=()=>{tabDepot.classList.add("active");tabRebal.classList.remove("active");
-  document.getElementById("viewDepot").style.display="";document.getElementById("viewRebal").style.display="none";};
-tabRebal.onclick=()=>{tabRebal.classList.add("active");tabDepot.classList.remove("active");
-  document.getElementById("viewDepot").style.display="none";document.getElementById("viewRebal").style.display="";renderTargets();};
+const TABS = {depot:["tabDepot","viewDepot"], rebal:["tabRebal","viewRebal"], sim:["tabSim","viewSim"]};
+function showTab(which){
+  Object.entries(TABS).forEach(([k,[btn,view]])=>{
+    const on = k===which;
+    document.getElementById(btn).classList.toggle("active", on);
+    document.getElementById(view).style.display = on ? "" : "none";
+  });
+  if(which==="rebal") renderTargets();
+  if(which==="sim"){ initSimDefaults(); renderSimWeights(); }
+}
+document.getElementById("tabDepot").onclick = ()=> showTab("depot");
+document.getElementById("tabRebal").onclick = ()=> showTab("rebal");
+document.getElementById("tabSim").onclick   = ()=> showTab("sim");
 
 document.getElementById("refreshBtn").onclick = ()=> refreshQuotes();
 
@@ -1148,11 +1570,11 @@ function syncModeBtns(){
 modeTotalBtn.onclick = ()=>{ state.settings.chartMode="total";   saveState(); syncModeBtns(); renderHistory(); };
 modeStackBtn.onclick = ()=>{ state.settings.chartMode="stacked"; saveState(); syncModeBtns(); renderHistory(); };
 const rangeSel = document.getElementById("rangeSel");
+rangeSel.innerHTML = RANGE_DEFS.map(d=>`<option value="${d.v}">${d.label}</option>`).join("");
 rangeSel.onchange = ()=>{ state.settings.range = rangeSel.value; saveState(); updateTrendHeader(); refreshQuotes(); };
-const RANGE_LABEL = {"1mo":"1 M","3mo":"3 M","6mo":"6 M","1y":"1 J"};
 function updateTrendHeader(){
   const th = document.getElementById("thTrend");
-  if(th && state) th.textContent = RANGE_LABEL[state.settings.range] || "3 M";
+  if(th && state) th.textContent = rangeDef(state.settings.range).short;
 }
 const autoSel = document.getElementById("autoSel");
 autoSel.onchange = ()=>{ state.settings.auto = +autoSel.value; saveState(); setupAuto(); };
