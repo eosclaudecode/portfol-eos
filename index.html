@@ -116,6 +116,19 @@
   .pfbar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;background:var(--card);border:1px solid var(--border);
     border-radius:var(--radius);padding:10px 14px;margin-bottom:16px;box-shadow:var(--shadow)}
   .pfbar select{max-width:220px}
+  /* Wertpapier-Detailansicht */
+  .link{cursor:pointer;color:var(--accent)}
+  .link:hover{text-decoration:underline}
+  .chk{display:inline-flex;align-items:center;gap:6px;font-size:13.5px;border:1px solid var(--border);
+    border-radius:999px;padding:5px 12px;cursor:pointer;background:#fff;user-select:none}
+  .chk input{margin:0;cursor:pointer}
+  .chk.on{border-color:var(--accent);background:var(--accent-soft)}
+  .chk .dot{width:12px;height:3px;border-radius:2px;display:inline-block}
+  .kv{display:grid;grid-template-columns:1fr auto;gap:7px 16px;padding:2px 0;font-size:14px}
+  .kv .k{color:var(--muted)}
+  .kv .v{font-variant-numeric:tabular-nums;font-weight:600;text-align:right}
+  .twocol{display:grid;grid-template-columns:1fr 1fr;gap:0 32px;padding:16px 18px}
+  @media(max-width:700px){.twocol{grid-template-columns:1fr}}
 </style>
 <script>
 /* ============================================================
@@ -189,6 +202,7 @@ window.DEPOT_FIREBASE = {
 
   <div class="tabs">
     <button id="tabDepot" class="active">Depot</button>
+    <button id="tabSec">Wertpapier</button>
     <button id="tabRebal">Rebalancing</button>
     <button id="tabSim">Simulation</button>
   </div>
@@ -299,6 +313,27 @@ window.DEPOT_FIREBASE = {
     </div>
   </section>
 
+  <!-- ================= WERTPAPIER TAB ================= -->
+  <section id="viewSec" style="display:none">
+    <div class="panel">
+      <div class="pad flex" style="align-items:flex-end">
+        <div class="field" style="margin:0"><label>Aus dem Depot</label>
+          <select id="secSel"></select></div>
+        <div class="field" style="margin:0;flex:1;min-width:200px"><label>oder suchen</label>
+          <input type="search" id="secSearch" placeholder="Name, Ticker, ISIN …" autocomplete="off"></div>
+        <div class="field" style="margin:0"><label>Zeitraum</label><select id="secRange"></select></div>
+      </div>
+      <div class="results" id="secResults" style="margin:0 18px 14px"></div>
+      <div class="pad flex" style="padding-top:0;align-items:center">
+        <span class="small muted">Gleitender Durchschnitt:</span>
+        <span id="secMaBoxes" class="flex" style="gap:6px"></span>
+        <input type="number" id="secMaCustom" min="2" max="400" step="1" placeholder="eigene" style="width:96px">
+        <button id="secMaAdd" title="Eigene Periode hinzufügen">+</button>
+      </div>
+    </div>
+    <div id="secOut"><div class="panel"><div class="empty">Wähle oben ein Wertpapier – oder klicke im Depot auf einen Namen.</div></div></div>
+  </section>
+
   <!-- ================= SIMULATION TAB ================= -->
   <section id="viewSim" style="display:none">
     <div class="panel">
@@ -403,7 +438,8 @@ const SAMPLE_POSITIONS = [
   {id:"p2", symbol:"IS3N.DE", name:"iShares Core MSCI EM IMI UCITS ETF", shares:45, buyPrice:31.80, buyDate:"2024-11-04", targetPct:25},
   {id:"p3", symbol:"VWCE.DE", name:"Vanguard FTSE All-World UCITS ETF",  shares:10, buyPrice:118.40, buyDate:"2025-09-22", targetPct:15},
 ];
-const DEFAULT_SETTINGS = {auto:60, proxyIndex:0, range:"3mo", chartMode:"total", chartBasis:"actual"};
+const DEFAULT_SETTINGS = {auto:60, proxyIndex:0, range:"3mo", chartMode:"total", chartBasis:"actual",
+                          secRange:"1y", secMAs:[50,200]};
 
 let session  = {user:null, key:null, cloud:false, uid:null};  // key: CryptoKey (AES-GCM, nur lokal)
 let userData = null;                   // {portfolios:[{id,name,positions}], active, settings}
@@ -967,7 +1003,7 @@ function renderPositions(){
     const weight = (val!=null && total>0) ? val/total : null;
     const curNote = q.currency && q.currency!=="EUR" ? ` <span class="muted small">(${q.currency})</span>` : "";
     return `<tr>
-      <td class="name-cell"><div class="n">${esc(p.name||p.symbol)}</div>
+      <td class="name-cell"><div class="n link" onclick="showSecurity('${esc(p.symbol)}')" title="Details anzeigen">${esc(p.name||p.symbol)}</div>
         <div class="s">${esc(p.symbol)} ${q.err?'<span class="badge err" title="'+esc(q.err)+'">Kursfehler</span>':""}</div></td>
       <td>${fmtNum.format(p.shares)}</td>
       <td>${q.priceEUR!=null ? eur(q.priceEUR)+curNote : '<span class="muted">…</span>'}</td>
@@ -1135,6 +1171,375 @@ document.getElementById("calcBtn").onclick = ()=>{
       ${mode==="buy"&&budget>0?" · Modus »Nur kaufen«: Untergewichtete Positionen werden zuerst aufgefüllt.":""}
     </div>`;
 };
+
+/* ============================================================
+   Wertpapier-Detailansicht mit gleitenden Durchschnitten
+   ============================================================ */
+const MA_PRESETS = [20, 50, 100, 200];
+const MA_COLORS  = ["#f59e0b","#6366f1","#ec4899","#0d9488","#3b82f6","#a855f7"];
+const secSelEl = document.getElementById("secSel");
+const secSearchEl = document.getElementById("secSearch");
+const secRangeEl = document.getElementById("secRange");
+let secState = {symbol:null, name:"", data:null, loading:false};
+let secSearchTimer = null;
+
+/* Gleitender Durchschnitt über die letzten `period` Werte (null bis genug Daten vorliegen) */
+function sma(values, period){
+  const out = new Array(values.length).fill(null);
+  if(period < 1) return out;
+  let sum = 0;
+  for(let i=0;i<values.length;i++){
+    sum += values[i];
+    if(i >= period) sum -= values[i-period];
+    if(i >= period-1) out[i] = sum/period;
+  }
+  return out;
+}
+/* Tage, die ein Zeitraum abdeckt (für Vorlauf-Berechnung) */
+function rangeDays(def){
+  const map = {"1d":1,"5d":7,"1mo":31,"3mo":93,"6mo":186,"1y":366,"2y":731,"5y":1827,"10y":3653};
+  if(def.trimDays) return def.trimDays;
+  if(def.v==="ytd") return Math.max(20, (Date.now()-new Date(new Date().getFullYear(),0,1))/86400000);
+  if(def.v==="max") return null;
+  return map[def.v] || 93;
+}
+const BARS_PER_YEAR = {"5m":19656,"30m":3276,"1d":252,"1wk":52,"1mo":12};
+
+/* Kursreihe inkl. Vorlauf laden, damit die Durchschnitte ab dem ersten sichtbaren Punkt stimmen */
+async function fetchSecuritySeries(symbol, rangeKey, maxPeriod){
+  const def = rangeDef(rangeKey);
+  const dispDays = rangeDays(def);
+  let range = def.range;
+  if(dispDays!=null && !def.intraday){
+    const barDays = def.interval==="1wk" ? 7 : def.interval==="1mo" ? 30 : 1.45; // 1.45 ≈ Kalendertage je Handelstag
+    const need = dispDays + maxPeriod*barDays;
+    const ladder = [["1mo",31],["3mo",93],["6mo",186],["1y",372],["2y",744],["5y",1830],["10y",3660],["max",1e9]];
+    range = (ladder.find(o=>o[1]>=need) || ladder[ladder.length-1])[0];
+  }
+  const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}`
+            + `?range=${range}&interval=${def.interval}`;
+  const raw = await fetchJSON(url);
+  const r = raw && raw.chart && raw.chart.result && raw.chart.result[0];
+  if(!r || !r.meta) throw new Error("Keine Kursdaten für " + symbol);
+  const meta = r.meta;
+  const q = ((r.indicators||{}).quote||[{}])[0];
+  const ts = r.timestamp || [];
+  const times=[], closes=[], vols=[];
+  (q.close||[]).forEach((v,i)=>{
+    if(v==null || ts[i]==null) return;
+    times.push(ts[i]); closes.push(v); vols.push((q.volume||[])[i] ?? null);
+  });
+  if(!closes.length) throw new Error("Keine Kursdaten für " + symbol);
+  if(meta.regularMarketPrice!=null) closes[closes.length-1] = meta.regularMarketPrice;
+  const cut = dispDays!=null ? Date.now()/1000 - dispDays*86400 : -Infinity;
+  const from = Math.max(0, times.findIndex(t=> t>=cut));
+  return {meta, times, closes, vols, from, def, currency:meta.currency||"EUR"};
+}
+
+function currentMAs(){
+  const list = (state && state.settings.secMAs) || [50,200];
+  return [...new Set(list)].filter(n=>n>=2&&n<=400).sort((a,b)=>a-b);
+}
+function renderMaBoxes(){
+  const active = currentMAs();
+  const all = [...new Set([...MA_PRESETS, ...active])].sort((a,b)=>a-b);
+  document.getElementById("secMaBoxes").innerHTML = all.map(nEl=>{
+    const on = active.includes(nEl);
+    const col = MA_COLORS[active.indexOf(nEl)] || "#94a3b8";
+    return `<label class="chk ${on?"on":""}" onclick="toggleMA(${nEl},event)">
+      <input type="checkbox" ${on?"checked":""} onclick="event.stopPropagation()" onchange="toggleMA(${nEl},event)">
+      <span class="dot" style="background:${on?col:"#cbd5e1"}"></span>${nEl}</label>`;
+  }).join("");
+}
+window.toggleMA = (n, ev)=>{
+  if(ev) ev.preventDefault();
+  const cur = currentMAs();
+  state.settings.secMAs = cur.includes(n) ? cur.filter(x=>x!==n) : [...cur, n];
+  saveState(); renderMaBoxes(); loadSecurity();
+};
+document.getElementById("secMaAdd").onclick = ()=>{
+  const el = document.getElementById("secMaCustom");
+  const n = parseInt(el.value);
+  if(!(n>=2 && n<=400)){ el.focus(); return; }
+  if(!currentMAs().includes(n)){ state.settings.secMAs = [...currentMAs(), n]; saveState(); }
+  el.value = ""; renderMaBoxes(); loadSecurity();
+};
+
+function initSecTab(){
+  if(!secRangeEl.options.length)
+    secRangeEl.innerHTML = RANGE_DEFS.map(d=>`<option value="${d.v}">${d.label}</option>`).join("");
+  secRangeEl.value = state.settings.secRange || "1y";
+  const opts = state.positions.map(p=>
+    `<option value="${esc(p.symbol)}"${p.symbol===secState.symbol?" selected":""}>${esc(p.name||p.symbol)}</option>`).join("");
+  secSelEl.innerHTML = `<option value="">– auswählen –</option>` + opts;
+  if(secState.symbol) secSelEl.value = secState.symbol;
+  renderMaBoxes();
+  if(!secState.symbol && state.positions.length){
+    secState.symbol = state.positions[0].symbol;
+    secState.name = state.positions[0].name || secState.symbol;
+    secSelEl.value = secState.symbol;
+    loadSecurity();
+  }
+}
+secSelEl.onchange = ()=>{
+  if(!secSelEl.value) return;
+  const p = state.positions.find(x=>x.symbol===secSelEl.value);
+  secState.symbol = secSelEl.value; secState.name = (p&&p.name)||secSelEl.value;
+  loadSecurity();
+};
+secRangeEl.onchange = ()=>{ state.settings.secRange = secRangeEl.value; saveState(); loadSecurity(); };
+
+/* Suche nach beliebigen Wertpapieren */
+secSearchEl.addEventListener("input", e=>{
+  clearTimeout(secSearchTimer);
+  const qy = e.target.value.trim();
+  const box = document.getElementById("secResults");
+  if(qy.length<2){ box.className="results"; return; }
+  secSearchTimer = setTimeout(async ()=>{
+    box.className = "results show";
+    box.innerHTML = '<div class="result"><span class="spin"></span>&nbsp;Suche läuft …</div>';
+    try{
+      const url = `https://query1.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(qy)}&quotesCount=8&newsCount=0&listsCount=0`;
+      const data = await fetchJSON(url);
+      const hits = (data.quotes||[]).filter(x=>x.symbol);
+      if(!hits.length){ box.innerHTML = '<div class="result muted">Nichts gefunden.</div>'; return; }
+      box.innerHTML = hits.slice(0,8).map((h,i)=>`
+        <div class="result" data-i="${i}"><span class="sym">${esc(h.symbol)}</span>
+          <span class="nm">${esc(h.longname||h.shortname||"")}</span>
+          <span class="ex">${esc(h.exchDisp||h.exchange||"")}</span></div>`).join("");
+      box.querySelectorAll(".result").forEach(el=>{
+        el.onclick = ()=>{
+          const h = hits[+el.dataset.i];
+          box.className = "results"; secSearchEl.value = "";
+          secSelEl.value = "";
+          showSecurity(h.symbol, h.longname||h.shortname||h.symbol);
+        };
+      });
+    }catch(err){ box.innerHTML = `<div class="result muted">Suche fehlgeschlagen.</div>`; }
+  }, 400);
+});
+secSearchEl.addEventListener("keydown", e=>{
+  if(e.key==="Enter" && e.target.value.trim()){
+    const s = e.target.value.trim().toUpperCase();
+    document.getElementById("secResults").className = "results";
+    e.target.value = "";
+    showSecurity(s, s);
+  }
+});
+
+window.showSecurity = (symbol, name)=>{
+  secState.symbol = symbol;
+  secState.name = name || symbol;
+  showTab("sec");
+  secSelEl.value = state.positions.some(p=>p.symbol===symbol) ? symbol : "";
+  loadSecurity();
+};
+
+async function loadSecurity(){
+  if(!secState.symbol || secState.loading) return;
+  const out = document.getElementById("secOut");
+  secState.loading = true;
+  out.innerHTML = `<div class="panel"><div class="pad muted"><span class="spin"></span> ${esc(secState.symbol)} wird geladen …</div></div>`;
+  try{
+    const mas = currentMAs();
+    const d = await fetchSecuritySeries(secState.symbol, state.settings.secRange||"1y", Math.max(0,...mas,0));
+    secState.data = d;
+    renderSecurity();
+  }catch(e){
+    out.innerHTML = `<div class="panel"><div class="warn-box" style="margin:16px 18px">
+      Kursdaten für „${esc(secState.symbol)}" konnten nicht geladen werden: ${esc(String(e.message||e))}</div></div>`;
+  }finally{ secState.loading = false; }
+}
+
+function renderSecurity(){
+  const d = secState.data; if(!d) return;
+  const meta = d.meta;
+  const f = fxFactor(d.currency);
+  const inEUR = f!=null;
+  const conv = v => v==null ? null : (inEUR ? v*f : v);
+  const cur  = inEUR ? "EUR" : d.currency;
+  const money = v => v==null ? "–" : (inEUR ? fmtEUR.format(v*f) : fmtNum.format(v)+" "+cur);
+
+  const closes = d.closes, times = d.times;
+  const mas = currentMAs();
+  const maSeries = {}; mas.forEach(p=> maSeries[p] = sma(closes, p));
+  const from = d.from;
+  const view = {
+    dates: times.slice(from).map(t=>new Date(t*1000)),
+    prices: closes.slice(from),
+    mas: Object.fromEntries(mas.map(p=>[p, maSeries[p].slice(from)])),
+    intraday: !!d.def.intraday, cur, inEUR, f
+  };
+  secState.view = view;
+
+  const price = closes[closes.length-1];
+  const prev  = meta.previousClose!=null ? meta.previousClose : (closes.length>1?closes[closes.length-2]:null);
+  const dayCh = prev ? price/prev-1 : null;
+  const first = view.prices[0];
+  const perf  = first ? price/first-1 : null;
+  const hi52 = meta.fiftyTwoWeekHigh, lo52 = meta.fiftyTwoWeekLow;
+  const hiR = Math.max(...view.prices), loR = Math.min(...view.prices);
+
+  // Volatilität (annualisiert) und maximaler Rückgang im Zeitraum
+  let vola = null;
+  if(view.prices.length>5){
+    const rets = [];
+    for(let i=1;i<view.prices.length;i++) if(view.prices[i-1]>0) rets.push(Math.log(view.prices[i]/view.prices[i-1]));
+    const m = rets.reduce((a,b)=>a+b,0)/rets.length;
+    const sd = Math.sqrt(rets.reduce((a,b)=>a+(b-m)*(b-m),0)/Math.max(1,rets.length-1));
+    const bpy = BARS_PER_YEAR[d.def.interval] || 252;
+    vola = sd*Math.sqrt(bpy);
+  }
+  let peak = -Infinity, mdd = 0;
+  view.prices.forEach(v=>{ if(v>peak) peak=v; const dd = v/peak-1; if(dd<mdd) mdd=dd; });
+
+  const pos = state.positions.find(p=>p.symbol===secState.symbol);
+  const {total} = totals();
+  const posVal = pos ? posValue(pos) : null;
+  const rangeLabel = rangeDef(state.settings.secRange||"1y").label;
+  const maRows = mas.map((p,i)=>{
+    const v = maSeries[p][maSeries[p].length-1];
+    const rel = v ? price/v-1 : null;
+    return {p, v, rel, color:MA_COLORS[i]||"#94a3b8"};
+  });
+
+  document.getElementById("secOut").innerHTML = `
+    <div class="cards">
+      <div class="card"><div class="lbl">${esc(meta.longName||meta.shortName||secState.symbol)}</div>
+        <div class="val">${money(price)}</div>
+        <div class="sub ${dayCh==null?"muted":dayCh>=0?"pos":"neg"}">${dayCh==null?"–":sign(dayCh)+fmtPct.format(dayCh)+" heute"}</div></div>
+      <div class="card"><div class="lbl">${esc(rangeLabel)}</div>
+        <div class="val ${perf==null?"":perf>=0?"pos":"neg"}">${perf==null?"–":sign(perf)+fmtPct.format(perf)}</div>
+        <div class="sub muted">${money(loR)} – ${money(hiR)}</div></div>
+      <div class="card"><div class="lbl">Volatilität p. a.</div>
+        <div class="val">${vola!=null?fmtPct.format(vola):"–"}</div>
+        <div class="sub muted">max. Rückgang ${fmtPct.format(mdd)}</div></div>
+      <div class="card"><div class="lbl">${pos?"Meine Position":"Nicht im Depot"}</div>
+        <div class="val">${pos?esc(eur(posVal)):"–"}</div>
+        <div class="sub muted">${pos?`${fmtNum.format(pos.shares)} Stück · ${total>0&&posVal!=null?fmtPct.format(posVal/total):"–"} des Depots`:"über „+ Wertpapier hinzufügen“ aufnehmen"}</div></div>
+    </div>
+
+    <div class="panel">
+      <div class="pad flex" style="padding-bottom:4px">
+        <h2 style="padding:0">Kursverlauf</h2>
+        <span class="spacer"></span>
+        <span class="small muted">${esc(secState.symbol)}${meta.fullExchangeName?" · "+esc(meta.fullExchangeName):""}</span>
+      </div>
+      <div style="padding:0 14px 6px;position:relative">
+        <svg id="secChart" viewBox="0 0 860 300" style="width:100%;height:auto;display:block"></svg>
+        <div id="secTip" class="tip"></div>
+      </div>
+      <div class="pad small muted" style="padding-top:0">
+        ${maRows.length?maRows.map(m=>`<span style="margin-right:14px"><span class="dot" style="display:inline-block;width:14px;height:3px;border-radius:2px;background:${m.color};vertical-align:middle"></span> GD ${m.p}</span>`).join(""):"Keine gleitenden Durchschnitte ausgewählt."}
+        ${d.def.intraday?" · Intraday-Kurse":""}${inEUR&&d.currency!=="EUR"?` · aus ${esc(d.currency)} mit aktuellem Kurs umgerechnet`:""}
+      </div>
+    </div>
+
+    <div class="panel">
+      <h2>Kennzahlen</h2>
+      <div class="twocol">
+        <div>
+          <div class="kv"><span class="k">Kurs</span><span class="v">${money(price)}</span></div>
+          <div class="kv"><span class="k">Vortagesschluss</span><span class="v">${money(prev)}</span></div>
+          <div class="kv"><span class="k">Tagesspanne</span><span class="v">${meta.regularMarketDayLow!=null?money(meta.regularMarketDayLow)+" – "+money(meta.regularMarketDayHigh):"–"}</span></div>
+          <div class="kv"><span class="k">52-Wochen-Hoch</span><span class="v">${money(hi52)}${hi52?` <span class="muted small">(${sign(price/hi52-1)}${fmtPct.format(price/hi52-1)})</span>`:""}</span></div>
+          <div class="kv"><span class="k">52-Wochen-Tief</span><span class="v">${money(lo52)}${lo52?` <span class="muted small">(${sign(price/lo52-1)}${fmtPct.format(price/lo52-1)})</span>`:""}</span></div>
+          <div class="kv"><span class="k">Volumen</span><span class="v">${meta.regularMarketVolume!=null?fmtNum.format(meta.regularMarketVolume):"–"}</span></div>
+        </div>
+        <div>
+          ${maRows.map(m=>`<div class="kv"><span class="k"><span class="dot" style="display:inline-block;width:12px;height:3px;border-radius:2px;background:${m.color};vertical-align:middle"></span> GD ${m.p}</span>
+            <span class="v">${m.v!=null?money(m.v):"–"} ${m.rel!=null?`<span class="${m.rel>=0?"pos":"neg"} small">(${sign(m.rel)}${fmtPct.format(m.rel)})</span>`:'<span class="muted small">(zu wenig Daten)</span>'}</span></div>`).join("")}
+          <div class="kv"><span class="k">Börse</span><span class="v">${esc(meta.fullExchangeName||meta.exchangeName||"–")}</span></div>
+          <div class="kv"><span class="k">Art / Währung</span><span class="v">${esc(meta.instrumentType||"–")} · ${esc(d.currency)}</span></div>
+        </div>
+      </div>
+      ${maRows.some(m=>m.rel!=null)?`<div class="pad small muted" style="padding-top:0">
+        Ein Kurs über dem gleitenden Durchschnitt gilt als Aufwärtstrend, darunter als Abwärtstrend –
+        das ist eine Faustregel der Chartanalyse, keine Empfehlung.</div>`:""}
+    </div>
+
+    ${pos?`<div class="panel">
+      <h2>Meine Position</h2>
+      <div class="twocol">
+        <div>
+          <div class="kv"><span class="k">Stückzahl</span><span class="v">${fmtNum.format(pos.shares)}</span></div>
+          <div class="kv"><span class="k">Aktueller Wert</span><span class="v">${esc(eur(posVal))}</span></div>
+          <div class="kv"><span class="k">Anteil am Depot</span><span class="v">${total>0&&posVal!=null?fmtPct.format(posVal/total):"–"}</span></div>
+        </div>
+        <div>
+          <div class="kv"><span class="k">Einstandskurs</span><span class="v">${pos.buyPrice?esc(eur(pos.buyPrice)):"–"}</span></div>
+          <div class="kv"><span class="k">Kaufdatum</span><span class="v">${pos.buyDate?esc(fmtDateLong.format(new Date(pos.buyDate+"T12:00:00"))):"–"}</span></div>
+          <div class="kv"><span class="k">Gewinn / Verlust</span><span class="v ${pos.buyPrice&&posVal!=null?(posVal-pos.shares*pos.buyPrice>=0?"pos":"neg"):""}">${
+            pos.buyPrice&&posVal!=null?sign(posVal-pos.shares*pos.buyPrice)+esc(eur(posVal-pos.shares*pos.buyPrice)):"–"}</span></div>
+        </div>
+      </div>
+      <div class="pad"><button onclick="editPos('${esc(pos.id)}')">Position bearbeiten</button></div>
+    </div>`:""}`;
+  drawSecChart();
+}
+
+function drawSecChart(){
+  const v = secState.view; if(!v) return;
+  const svg = document.getElementById("secChart"); if(!svg) return;
+  const W=860,H=300,L=76,R=12,T=14,B=30, iw=W-L-R, ih=H-T-B;
+  const n = v.prices.length;
+  const maVals = Object.values(v.mas).flat().filter(x=>x!=null);
+  let ymax = Math.max(...v.prices, ...maVals), ymin = Math.min(...v.prices, ...maVals);
+  const pad = (ymax-ymin)*0.08 || ymax*0.02 || 1;
+  ymin = Math.max(0, ymin-pad); ymax += pad;
+  const x = i => L + (n>1 ? i/(n-1)*iw : iw/2);
+  const y = val => T + ih - (val-ymin)/((ymax-ymin)||1)*ih;
+  const fmtAxis = val => v.inEUR ? fmtEUR0.format(val) : (fmtNum.format(Math.round(val*100)/100)+" "+v.cur);
+  let g = "";
+  for(let k=0;k<=4;k++){
+    const val = ymin + (ymax-ymin)*k/4, yy = y(val);
+    g += `<line x1="${L}" x2="${W-R}" y1="${yy}" y2="${yy}" stroke="#e3e8ef"/>`;
+    g += `<text x="${L-8}" y="${yy+4}" text-anchor="end" font-size="11" fill="#68778c">${esc(fmtAxis(val))}</text>`;
+  }
+  const axisFmt = axisFormatter(v);
+  const nl = Math.min(5,n);
+  for(let k=0;k<nl;k++){
+    const i = Math.round(k*(n-1)/(nl-1));
+    g += `<text x="${x(i)}" y="${H-8}" text-anchor="middle" font-size="11" fill="#68778c">${esc(axisFmt(v.dates[i]))}</text>`;
+  }
+  const up = v.prices[n-1] >= v.prices[0], col = up ? "#16a34a" : "#dc2626";
+  g += `<path d="${histPath(v.prices,x,y)}L${x(n-1).toFixed(1)},${T+ih}L${x(0).toFixed(1)},${T+ih}Z" fill="${col}" fill-opacity="0.10"/>`;
+  g += `<path d="${histPath(v.prices,x,y)}" fill="none" stroke="${col}" stroke-width="2"/>`;
+  // Gleitende Durchschnitte (Lücken am Anfang überspringen)
+  Object.entries(v.mas).forEach(([p, arr], idx)=>{
+    let d = "", started = false;
+    arr.forEach((val,i)=>{
+      if(val==null){ started = false; return; }
+      d += (started?"L":"M") + x(i).toFixed(1) + "," + y(val).toFixed(1);
+      started = true;
+    });
+    if(d) g += `<path d="${d}" fill="none" stroke="${MA_COLORS[idx]||"#94a3b8"}" stroke-width="1.6" stroke-opacity="0.95"/>`;
+  });
+  g += `<line id="secCursor" x1="0" x2="0" y1="${T}" y2="${T+ih}" stroke="#68778c" stroke-dasharray="3 3" style="display:none"/>`;
+  g += `<rect id="secHit" x="${L}" y="${T}" width="${iw}" height="${ih}" fill="transparent"/>`;
+  svg.innerHTML = g;
+
+  const hit = svg.querySelector("#secHit"), cursor = svg.querySelector("#secCursor"), tip = document.getElementById("secTip");
+  const money = val => val==null ? "–" : (v.inEUR ? fmtEUR.format(val*v.f) : fmtNum.format(Math.round(val*100)/100)+" "+v.cur);
+  hit.addEventListener("mousemove", ev=>{
+    const rect = svg.getBoundingClientRect();
+    const vx = (ev.clientX-rect.left)*W/rect.width;
+    let i = Math.round((vx-L)/iw*(n-1));
+    i = Math.max(0, Math.min(n-1, i));
+    cursor.setAttribute("x1", x(i)); cursor.setAttribute("x2", x(i)); cursor.style.display = "";
+    let html = `<div style="font-weight:700;margin-bottom:4px">${esc(tipFormatter(v)(v.dates[i]))}</div>`;
+    html += `<div class="r"><span>Kurs</span><span class="v">${esc(money(v.prices[i]))}</span></div>`;
+    Object.entries(v.mas).forEach(([p,arr],idx)=>{
+      if(arr[i]==null) return;
+      html += `<div class="r"><span class="sw" style="background:${MA_COLORS[idx]||"#94a3b8"}"></span><span>GD ${esc(p)}</span><span class="v">${esc(money(arr[i]))}</span></div>`;
+    });
+    tip.innerHTML = html; tip.style.display = "block";
+    const px = x(i)/W*rect.width;
+    tip.style.left = Math.min(rect.width - tip.offsetWidth - 4, Math.max(4, px+12)) + "px";
+    tip.style.top = "8px";
+  });
+  hit.addEventListener("mouseleave", ()=>{ tip.style.display="none"; cursor.style.display="none"; });
+}
 
 /* ============================================================
    Simulation: Einmalanlage (Lump Sum) – rein lesend, verändert
@@ -1590,7 +1995,8 @@ document.getElementById("confirmAdd").onclick = ()=>{
 };
 
 /* ---------- Tabs / Toolbar ---------- */
-const TABS = {depot:["tabDepot","viewDepot"], rebal:["tabRebal","viewRebal"], sim:["tabSim","viewSim"]};
+const TABS = {depot:["tabDepot","viewDepot"], sec:["tabSec","viewSec"],
+              rebal:["tabRebal","viewRebal"], sim:["tabSim","viewSim"]};
 function showTab(which){
   Object.entries(TABS).forEach(([k,[btn,view]])=>{
     const on = k===which;
@@ -1599,7 +2005,9 @@ function showTab(which){
   });
   if(which==="rebal") renderTargets();
   if(which==="sim"){ initSimDefaults(); renderSimWeights(); }
+  if(which==="sec") initSecTab();
 }
+document.getElementById("tabSec").onclick   = ()=> showTab("sec");
 document.getElementById("tabDepot").onclick = ()=> showTab("depot");
 document.getElementById("tabRebal").onclick = ()=> showTab("rebal");
 document.getElementById("tabSim").onclick   = ()=> showTab("sim");
