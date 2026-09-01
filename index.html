@@ -138,6 +138,11 @@
    Konfigurationsblock aus der Firebase-Konsole hier einsetzen.
    Bleiben die Felder leer, arbeitet die App rein lokal.
    ============================================================ */
+/* Optionaler eigener Kurs-Proxy (empfohlen, siehe SETUP-PROXY.md).
+   Beispiel: "https://depot-proxy.DEINNAME.workers.dev/?url="
+   Leer lassen = öffentliche Dienste verwenden. */
+window.DEPOT_PROXY = "";
+
 window.DEPOT_FIREBASE = {
   apiKey: "AIzaSyAvHHGqFPAytbOtzh-CmKC7k4j94-oCyXg",
   authDomain: "portfol-eos.firebaseapp.com",
@@ -181,6 +186,7 @@ window.DEPOT_FIREBASE = {
         <option value="60" selected>Auto: 60 s</option>
         <option value="300">Auto: 5 min</option>
       </select>
+      <button id="checkBtn" title="Prüfen, welche Kursquellen erreichbar sind">Quellen prüfen</button>
       <button id="exportBtn" title="Depot als JSON-Datei sichern">Export</button>
       <button id="importBtn" title="Depot aus JSON-Datei laden">Import</button>
       <input type="file" id="importFile" accept=".json" style="display:none">
@@ -585,28 +591,97 @@ async function persistNow(){
 }
 
 /* ---------- Datenabruf (Yahoo Finance über CORS-Proxys) ---------- */
+/* Yahoo erlaubt keine direkten Browser-Zugriffe (CORS) – daher Weiterleitungsdienste.
+   Öffentliche Dienste kommen und gehen; die App probiert deshalb mehrere und merkt
+   sich die funktionierende. Ein eigener Proxy (siehe SETUP-PROXY.md) ist am stabilsten. */
 const PROXIES = [
-  u => "https://corsproxy.io/?url=" + encodeURIComponent(u),
-  u => "https://api.allorigins.win/raw?url=" + encodeURIComponent(u),
-  u => "https://api.codetabs.com/v1/proxy?quest=" + encodeURIComponent(u),
-  u => u, // Direktversuch (funktioniert z. B. hinter eigenem Proxy/Server)
+  {name:"cors.sh",    build: u => "https://proxy.cors.sh/" + u},
+  {name:"allorigins", build: u => "https://api.allorigins.win/raw?url=" + encodeURIComponent(u)},
+  {name:"codetabs",   build: u => "https://api.codetabs.com/v1/proxy?quest=" + encodeURIComponent(u)},
+  {name:"thingproxy", build: u => "https://thingproxy.freeboard.io/fetch/" + u},
+  {name:"direkt",     build: u => u},   // klappt nur hinter eigenem Server/Proxy
 ];
+if(window.DEPOT_PROXY){
+  const custom = String(window.DEPOT_PROXY);
+  PROXIES.unshift({name:"eigener Proxy", build: u =>
+    custom.includes("{url}") ? custom.replace("{url}", encodeURIComponent(u)) : custom + encodeURIComponent(u)});
+}
+let activeProxy = null;      // zuletzt erfolgreiche Quelle
+let proxyProbe  = null;      // laufende Suche nach einer funktionierenden Quelle
+let lastFetchErrors = [];
+
+async function tryProxy(p, url, ms){
+  const res = await fetch(p.build(url), {signal: AbortSignal.timeout(ms)});
+  if(!res.ok) throw new Error(p.name+": HTTP "+res.status);
+  const txt = await res.text();
+  let data;
+  try{ data = JSON.parse(txt); }
+  catch(e){ throw new Error(p.name+": keine gültige Antwort"); }
+  if(data && data.error && !data.chart && !data.quotes)
+    throw new Error(p.name+": "+(data.message || data.error));
+  return data;
+}
 
 async function fetchJSON(url){
-  const order = [];
-  const start = state.settings.proxyIndex || 0;
-  for(let i=0;i<PROXIES.length;i++) order.push((start+i)%PROXIES.length);
-  let lastErr;
-  for(const idx of order){
-    try{
-      const res = await fetch(PROXIES[idx](url), {signal: AbortSignal.timeout(12000)});
-      if(!res.ok) throw new Error("HTTP "+res.status);
-      const data = await res.json();
-      if(state.settings.proxyIndex !== idx){ state.settings.proxyIndex = idx; saveState(); }
-      return data;
-    }catch(e){ lastErr = e; }
+  // 1) Bekannte, zuletzt funktionierende Quelle zuerst
+  if(activeProxy){
+    try{ return await tryProxy(activeProxy, url, 9000); }
+    catch(e){ lastFetchErrors = [String(e.message||e)]; activeProxy = null; }
   }
-  throw lastErr || new Error("Alle Datenquellen fehlgeschlagen");
+  // 2) Läuft bereits eine Suche? Dann deren Ergebnis mitbenutzen (kein Anfrage-Sturm)
+  if(proxyProbe){
+    const winner = await proxyProbe.catch(()=>null);
+    if(winner){ try{ return await tryProxy(winner, url, 12000); }catch(e){ /* weiter unten neu suchen */ } }
+  }
+  // 3) Alle Quellen parallel testen – die erste gültige Antwort gewinnt
+  let resolveWinner, rejectWinner;
+  proxyProbe = new Promise((res,rej)=>{ resolveWinner=res; rejectWinner=rej; });
+  proxyProbe.catch(()=>{});
+  const errors = [];
+  const attempt = new Promise((resolve, reject)=>{
+    let open = PROXIES.length;
+    PROXIES.forEach(p=>{
+      tryProxy(p, url, 12000).then(data=>{
+        activeProxy = p; resolveWinner(p); resolve(data);
+      }).catch(e=>{
+        errors.push(String(e.message||e));
+        if(--open===0){
+          rejectWinner(new Error("keine Quelle"));
+          reject(new Error("Keine Datenquelle erreichbar. Details: " + errors.join(" · ")));
+        }
+      });
+    });
+  });
+  try{ return await attempt; }
+  finally{ lastFetchErrors = errors; proxyProbe = null; }
+}
+
+/* Diagnose: prüft alle Quellen einzeln und zeigt das Ergebnis an */
+window.checkSources = checkSources;
+async function checkSources(){
+  const box = document.getElementById("posError");
+  const testUrl = "https://query1.finance.yahoo.com/v8/finance/chart/SPY?range=1d&interval=1d";
+  box.innerHTML = `<div class="warn-box"><span class="spin"></span> Datenquellen werden geprüft …</div>`;
+  const rows = await Promise.all(PROXIES.map(async p=>{
+    const t0 = Date.now();
+    try{
+      const d = await tryProxy(p, testUrl, 12000);
+      const ok = !!(d && d.chart && d.chart.result);
+      return `<div>${ok?"✓":"✗"} <strong>${esc(p.name)}</strong> – ${ok?"funktioniert":"unerwartete Antwort"} (${Date.now()-t0} ms)</div>`;
+    }catch(e){
+      return `<div>✗ <strong>${esc(p.name)}</strong> – ${esc(String(e.message||e).replace(p.name+": ",""))}</div>`;
+    }
+  }));
+  const anyOk = rows.some(r=>r.includes("✓"));
+  box.innerHTML = `<div class="warn-box" style="${anyOk?"background:#ecfdf5;border-color:#a7f3d0;color:#065f46":""}">
+    <div style="margin-bottom:6px"><strong>Ergebnis der Prüfung</strong>
+      <button style="float:right;padding:2px 8px" onclick="document.getElementById('posError').innerHTML=''">schließen</button></div>
+    ${rows.join("")}
+    <div style="margin-top:8px">${anyOk
+      ? "Mindestens eine Quelle funktioniert – „↻ Kurse aktualisieren“ sollte jetzt klappen."
+      : "Keine öffentliche Quelle erreichbar. Ein eigener Proxy schafft dauerhaft Abhilfe (siehe SETUP-PROXY.md)."}</div>
+  </div>`;
+  if(anyOk) refreshQuotes();
 }
 
 /* Auswählbare Zeiträume. Yahoo kennt nur bestimmte range-Werte –
@@ -710,7 +785,13 @@ async function refreshQuotes(){
   if(pendingRefresh){ pendingRefresh = false; return refreshQuotes(); }  // zwischenzeitlich angeforderter Lauf
   const errs = state.positions.filter(p => quotes[p.symbol] && quotes[p.symbol].err).length;
   const time = new Date().toLocaleTimeString("de-DE",{hour:"2-digit",minute:"2-digit",second:"2-digit"});
-  setStatus(errs ? `⚠ ${errs} Kurs(e) fehlgeschlagen · ${time}` : `Stand: ${time}`);
+  setStatus(errs ? `⚠ ${errs} Kurs(e) fehlgeschlagen · ${time}` : `Stand: ${time}${activeProxy?` · Quelle: ${esc(activeProxy.name)}`:""}`);
+  // Wenn gar nichts geladen werden konnte: Hinweis mit Prüf-Möglichkeit
+  const box = document.getElementById("posError");
+  if(errs === state.positions.length && errs > 0){
+    box.innerHTML = `<div class="warn-box">Es konnten keine Kurse geladen werden – die Verbindung zur Kursquelle scheint gestört.
+      <button style="margin-left:8px;padding:3px 10px" onclick="checkSources()">Datenquellen prüfen</button></div>`;
+  } else if(box.innerHTML.includes("keine Kurse geladen")) box.innerHTML = "";
   render();
 }
 function setStatus(html){ document.getElementById("statusLine").innerHTML = html; }
@@ -2013,6 +2094,7 @@ document.getElementById("tabRebal").onclick = ()=> showTab("rebal");
 document.getElementById("tabSim").onclick   = ()=> showTab("sim");
 
 document.getElementById("refreshBtn").onclick = ()=> refreshQuotes();
+document.getElementById("checkBtn").onclick = ()=>{ showTab("depot"); checkSources(); };
 
 /* Chart-Steuerung */
 const modeTotalBtn = document.getElementById("modeTotal"), modeStackBtn = document.getElementById("modeStack");
