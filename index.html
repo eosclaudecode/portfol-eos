@@ -138,10 +138,10 @@
    Konfigurationsblock aus der Firebase-Konsole hier einsetzen.
    Bleiben die Felder leer, arbeitet die App rein lokal.
    ============================================================ */
-/* Optionaler eigener Kurs-Proxy (empfohlen, siehe SETUP-PROXY.md).
-   Beispiel: "https://depot-proxy.DEINNAME.workers.dev/?url="
-   Leer lassen = öffentliche Dienste verwenden. */
-window.DEPOT_PROXY = "";
+/* Eigener Kurs-Proxy (Cloudflare Worker, siehe SETUP-PROXY.md).
+   Wird zuerst verwendet; öffentliche Dienste bleiben als Reserve aktiv.
+   Leer lassen = nur öffentliche Dienste verwenden. */
+window.DEPOT_PROXY = "https://depot-proxy.eosclaudecode.workers.dev/?url=";
 
 window.DEPOT_FIREBASE = {
   apiKey: "AIzaSyAvHHGqFPAytbOtzh-CmKC7k4j94-oCyXg",
