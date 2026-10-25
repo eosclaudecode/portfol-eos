@@ -3,6 +3,9 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<!-- Sicherheitsrichtlinie: Skripte nur von hier und Firebase, Verbindungen nur zum eigenen Proxy und zu Google/Firebase.
+     Selbst eingeschleuster Code könnte so keine Daten an fremde Server schicken. -->
+<meta http-equiv="Content-Security-Policy" content="script-src 'self' 'unsafe-inline' https://www.gstatic.com; connect-src 'self' https://depot-proxy.eosclaudecode.workers.dev https://*.googleapis.com; frame-src https://portfol-eos.firebaseapp.com; object-src 'none'; base-uri 'self'; form-action 'none'">
 <title>Depot Copilot – Portfolio-Tracker & Rebalancing</title>
 <style>
   :root{
@@ -181,8 +184,7 @@
    Bleiben die Felder leer, arbeitet die App rein lokal.
    ============================================================ */
 /* Eigener Kurs-Proxy (Cloudflare Worker, siehe SETUP-PROXY.md).
-   Wird zuerst verwendet; öffentliche Dienste bleiben als Reserve aktiv.
-   Leer lassen = nur öffentliche Dienste verwenden. */
+   Einzige Kursquelle – öffentliche CORS-Proxys werden aus Sicherheitsgründen nicht verwendet. */
 window.DEPOT_PROXY = "https://depot-proxy.eosclaudecode.workers.dev/?url=";
 
 window.DEPOT_FIREBASE = {
@@ -647,15 +649,11 @@ async function persistNow(){
 }
 
 /* ---------- Datenabruf (Yahoo Finance über CORS-Proxys) ---------- */
-/* Yahoo erlaubt keine direkten Browser-Zugriffe (CORS) – daher Weiterleitungsdienste.
-   Öffentliche Dienste kommen und gehen; die App probiert deshalb mehrere und merkt
-   sich die funktionierende. Ein eigener Proxy (siehe SETUP-PROXY.md) ist am stabilsten. */
-const PROXIES = [
-  {name:"cors.sh",    build: u => "https://proxy.cors.sh/" + u},
-  {name:"allorigins", build: u => "https://api.allorigins.win/raw?url=" + encodeURIComponent(u)},
-  {name:"codetabs",   build: u => "https://api.codetabs.com/v1/proxy?quest=" + encodeURIComponent(u)},
-  {name:"thingproxy", build: u => "https://thingproxy.freeboard.io/fetch/" + u},
-  {name:"direkt",     build: u => u},   // klappt nur hinter eigenem Server/Proxy
+/* Yahoo erlaubt keine direkten Browser-Zugriffe (CORS) – daher der eigene Proxy (siehe SETUP-PROXY.md).
+   Öffentliche Weiterleitungsdienste sind bewusst entfernt: Wer die Antwort liefert, kann
+   Inhalte in die Seite einschleusen und sieht, welche Wertpapiere abgefragt werden. */
+const PROXIES = window.DEPOT_PROXY ? [] : [
+  {name:"direkt",     build: u => u},   // nur ohne eigenen Proxy; klappt nur hinter eigenem Server
 ];
 if(window.DEPOT_PROXY){
   const custom = String(window.DEPOT_PROXY);
@@ -735,7 +733,7 @@ async function checkSources(){
     ${rows.join("")}
     <div style="margin-top:8px">${anyOk
       ? "Mindestens eine Quelle funktioniert – „↻ Kurse aktualisieren“ sollte jetzt klappen."
-      : "Keine öffentliche Quelle erreichbar. Ein eigener Proxy schafft dauerhaft Abhilfe (siehe SETUP-PROXY.md)."}</div>
+      : "Keine Quelle erreichbar – bitte den eigenen Proxy (Cloudflare Worker, siehe SETUP-PROXY.md) prüfen."}</div>
   </div>`;
   if(anyOk) refreshQuotes();
 }
@@ -1155,9 +1153,9 @@ function renderPositions(){
     const cost = p.buyPrice ? p.shares*p.buyPrice : null;
     const pl = (val!=null && cost!=null) ? val-cost : null;
     const weight = (val!=null && total>0) ? val/total : null;
-    const curNote = q.currency && q.currency!=="EUR" ? ` <span class="muted small">(${q.currency})</span>` : "";
+    const curNote = q.currency && q.currency!=="EUR" ? ` <span class="muted small">(${esc(q.currency)})</span>` : "";
     return `<tr>
-      <td class="name-cell"><div class="n link" role="button" tabindex="0" onclick="showSecurity('${esc(p.symbol)}')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();showSecurity('${esc(p.symbol)}')}" title="Details anzeigen">${esc(p.name||p.symbol)}</div>
+      <td class="name-cell"><div class="n link" role="button" tabindex="0" onclick="showSecurity(${jsArg(p.symbol)})" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();showSecurity(${jsArg(p.symbol)})}" title="Details anzeigen">${esc(p.name||p.symbol)}</div>
         <div class="s">${esc(p.symbol)} ${q.err?'<span class="badge err" title="'+esc(q.err)+'">Kursfehler</span>':""}</div></td>
       <td>${fmtNum.format(p.shares)}</td>
       <td>${q.priceEUR!=null ? eur(q.priceEUR)+curNote : '<span class="muted">…</span>'}</td>
@@ -1168,8 +1166,8 @@ function renderPositions(){
       <td class="${pl==null?"":pl>=0?"pos":"neg"}">${pl==null?"–":sign(pl)+eur(pl)}</td>
       <td>${weight!=null?fmtPct.format(weight):"–"}</td>
       <td>
-        <button class="icon-btn" aria-label="Position bearbeiten" title="Bearbeiten" onclick="editPos('${p.id}')">✎</button>
-        <button class="icon-btn" aria-label="Position entfernen" title="Entfernen" onclick="removePos('${p.id}')">✕</button>
+        <button class="icon-btn" aria-label="Position bearbeiten" title="Bearbeiten" onclick="editPos(${jsArg(p.id)})">✎</button>
+        <button class="icon-btn" aria-label="Position entfernen" title="Entfernen" onclick="removePos(${jsArg(p.id)})">✕</button>
       </td>
     </tr>`;
   }).join("");
@@ -1209,7 +1207,7 @@ function renderTargets(){
       <td>${eur(val)}</td>
       <td>${ist!=null?fmtPct2.format(ist)+" %":"–"}</td>
       <td><input type="text" inputmode="decimal" class="target-input"
-          value="${p.targetPct!=null?toComma(p.targetPct):""}" onchange="setTarget('${p.id}', this.value)"> %</td>
+          value="${p.targetPct!=null?toComma(p.targetPct):""}" onchange="setTarget(${jsArg(p.id)}, this.value)"> %</td>
       <td class="${dev==null?"":Math.abs(dev)<1?"muted":dev>0?"neg":"pos"}">${dev==null?"–":sign(dev)+fmtPct2.format(dev)+" %-Pkt."}</td>
     </tr>`;
   }).join("");
@@ -1392,7 +1390,7 @@ async function fetchSecuritySeries(symbol, rangeKey, maxPeriod){
 
 function currentMAs(){
   const list = (state && state.settings.secMAs) || [50,200];
-  return [...new Set(list)].filter(n=>n>=2&&n<=400).sort((a,b)=>a-b);
+  return [...new Set(list.map(Number))].filter(n=>Number.isInteger(n)&&n>=2&&n<=400).sort((a,b)=>a-b);
 }
 function renderMaBoxes(){
   const active = currentMAs();
@@ -1629,7 +1627,7 @@ function renderSecurity(){
             pos.buyPrice&&posVal!=null?sign(posVal-pos.shares*pos.buyPrice)+esc(eur(posVal-pos.shares*pos.buyPrice)):"–"}</span></div>
         </div>
       </div>
-      <div class="pad"><button onclick="editPos('${esc(pos.id)}')">Position bearbeiten</button></div>
+      <div class="pad"><button onclick="editPos(${jsArg(pos.id)})">Position bearbeiten</button></div>
     </div>`:""}`;
   drawSecChart();
 }
@@ -2254,6 +2252,9 @@ document.getElementById("importFile").onchange = e=>{
 };
 
 function esc(s){ return String(s==null?"":s).replace(/[&<>"']/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
+/* JS-String-Literal für Inline-Handler (onclick="f(${jsArg(x)})"): esc() allein genügt dort nicht,
+   weil der Browser &#39; vor dem Ausführen wieder zu ' dekodiert. */
+function jsArg(s){ return esc(JSON.stringify(String(s==null?"":s))); }
 
 /* ---------- Login / Session ---------- */
 const loginView = document.getElementById("loginView"), appUI = document.getElementById("appUI");
