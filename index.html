@@ -174,6 +174,105 @@
   .kv .v{font-variant-numeric:tabular-nums;font-weight:600;text-align:right}
   .twocol{display:grid;grid-template-columns:1fr 1fr;gap:0 32px;padding:16px 18px}
   @media(max-width:700px){.twocol{grid-template-columns:1fr}}
+  /* Freiheit (Ruhestandsrechner) */
+  .free-grid{display:grid;grid-template-columns:1fr 1fr;gap:0 20px}
+  @media(max-width:760px){.free-grid{grid-template-columns:1fr}}
+  .free-fields{display:grid;grid-template-columns:1fr 1fr;gap:0 12px;padding:0 18px 18px;align-items:end}
+  .free-fields .full{grid-column:1/-1}
+  .free-fields .field label{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .free-fields input[type=text],.free-fields input[type=number]{width:100%}
+  .free-fields .hint{margin-top:10px}
+  input[type=range]{accent-color:var(--accent);min-height:36px;cursor:pointer;touch-action:pan-y}
+  .range-row{display:flex;align-items:center;gap:12px}
+  .range-row input[type=range]{flex:1;min-width:0}
+  .unit-in{position:relative;flex:none;width:84px}
+  .unit-in input{width:100%;padding-right:30px!important;text-align:right}
+  .unit-in span{position:absolute;right:11px;top:50%;transform:translateY(-50%);color:var(--muted);pointer-events:none}
+  .free-toggle{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:14px;padding:10px 14px;
+    border:1px solid var(--border);border-radius:10px;background:var(--field);cursor:pointer;min-height:52px}
+  .free-toggle.on{border-color:var(--accent);background:var(--accent-soft)}
+  .free-toggle .t{display:block;font-weight:600;font-size:14px}
+  .free-toggle .s{display:block;font-size:12.5px}
+  .free-toggle input{width:22px;height:22px;flex:none;accent-color:var(--accent);margin:0}
+  .seg-full{display:flex}
+  .seg-full button{flex:1}
+  .ret-head{display:flex;align-items:baseline;gap:4px 12px;flex-wrap:wrap}
+  .ret-big{font-size:28px;font-weight:700;font-variant-numeric:tabular-nums}
+  .ret-track{position:relative;padding-top:4px}
+  .ret-track input{width:100%;display:block}
+  .ret-marks{position:relative;height:16px;margin:0 8px}
+  .ret-marks span{position:absolute;top:2px;width:10px;height:10px;margin-left:-5px;border-radius:50%;border:2px solid currentColor}
+  .ret-marks span.lt{background:currentColor}
+  .ret-marks span.mix{width:14px;height:14px;margin-left:-7px;top:0;border-radius:3px;transform:rotate(45deg);background:var(--text);border-color:var(--card)}
+  .ret-scale{display:flex;justify-content:space-between;padding:0 2px}
+  .anchors{display:flex;flex-wrap:wrap;gap:8px;padding:6px 18px 12px}
+  .anchor{display:inline-flex;align-items:center;gap:7px;font-size:13px;border-radius:999px;padding:5px 12px;min-height:38px;max-width:100%}
+  .anchor .nm{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .anchor .v{font-weight:700;font-variant-numeric:tabular-nums}
+  .anchor .c{color:var(--muted);font-size:12px;white-space:nowrap}
+  .anchor .sw{width:10px;height:10px;border-radius:50%;flex:none;border:2px solid currentColor}
+  .anchor .sw.lt{background:currentColor}
+  .anchor .sw.dia{border-radius:2px;transform:rotate(45deg);background:currentColor}
+  .anchor.mix{border-color:var(--accent);background:var(--accent-soft)}
+  .anchor.off{opacity:.6;cursor:default;border:1px dashed var(--border);background:none}
+  .anc-list{border-top:1px solid var(--border)}
+  .anc-row{display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:8px 10px;align-items:center;padding:10px 18px;border-bottom:1px solid var(--border)}
+  .anc-row .nm{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .anc-row .sy{font-size:12px;color:var(--muted)}
+  .anc-row .anchor{justify-content:center}
+  .wish{border-radius:10px;padding:12px 14px;font-size:14px;line-height:1.55}
+  .wish.ok{background:var(--ok-bg);border:1px solid var(--ok-border);color:var(--ok-text)}
+  .wish.no{background:var(--warn-bg);border:1px solid var(--warn-border);color:var(--warn-text)}
+  .wish ul{margin:6px 0 0 18px}
+  .mx td,.mx th{text-align:center}
+  .mx th:first-child,.mx td:first-child{text-align:left;white-space:normal}
+  .mx td.c{font-weight:600}
+  .mx td.better{background:color-mix(in srgb,var(--pos) 14%,transparent)}
+  .mx td.worse{background:color-mix(in srgb,var(--neg) 12%,transparent)}
+  .mx td.cur{outline:2px solid var(--accent);outline-offset:-2px;background:var(--accent-soft)}
+  .free-sticky{display:none}
+  .tabs svg{display:none}
+  @media(max-width:560px){
+    /* iOS zoomt bei Schrift unter 16px in Eingabefelder hinein */
+    input[type=text],input[type=number],input[type=search],input[type=password],input[type=date],select{font-size:16px}
+    /* Tab-Leiste als Navigationsleiste am unteren Rand – mit dem Daumen erreichbar, alle Tabs sichtbar */
+    .wrap{padding-bottom:calc(96px + env(safe-area-inset-bottom))}
+    .tabs{position:fixed;left:0;right:0;bottom:0;z-index:30;margin:0;width:auto;max-width:none;border-radius:0;
+      display:grid;grid-template-columns:repeat(5,1fr);gap:2px;overflow:visible;
+      padding:6px 6px calc(6px + env(safe-area-inset-bottom));background:var(--card);border-top:1px solid var(--border);
+      box-shadow:0 -4px 16px rgba(0,0,0,.08)}
+    .tabs button{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;min-height:54px;
+      padding:4px 0;font-size:10.5px;letter-spacing:-.01em;border-radius:10px;min-width:0}
+    .tabs button.active{background:var(--accent-soft);color:var(--link);box-shadow:none}
+    .tabs svg{display:block;width:22px;height:22px;flex:none}
+    /* Freiheit */
+    .free-cards{grid-template-columns:1fr 1fr;gap:8px}
+    .free-cards .card{padding:12px 12px}
+    .free-cards .card .lbl{font-size:11px}
+    .free-cards .card .val{font-size:18px;line-height:1.25}
+    .free-cards .card .sub{font-size:12px}
+    .free-cards .card.wide{grid-column:1/-1}
+    .free-fields{padding:0 14px 16px;gap:0 10px}
+    .panel .pad{padding:14px}
+    .anchors{padding:6px 14px 12px}
+    .anchors .anchor{flex:1 1 100%}
+    .anc-row{grid-template-columns:1fr 1fr;padding:10px 14px}
+    .anc-row .who{grid-column:1/-1}
+    .anc-row .anchor{width:100%;padding:5px 8px}
+    .ret-big{font-size:26px}
+    .mx th,.mx td{padding:9px 3px;font-size:13px}
+    .mx th:first-child,.mx td:first-child{padding-left:12px}
+    .free-sticky{display:flex;position:fixed;top:0;left:0;right:0;z-index:25;gap:8px;align-items:center;justify-content:space-between;
+      padding:calc(8px + env(safe-area-inset-top)) 16px 8px;background:var(--card);border-bottom:1px solid var(--border);
+      box-shadow:var(--shadow);font-size:13.5px;transform:translateY(-110%);transition:transform .2s}
+    .free-sticky.show{transform:none}
+    .free-sticky strong{font-variant-numeric:tabular-nums}
+  }
+  @media(max-width:360px){
+    .tabs{padding-left:2px;padding-right:2px}
+    .tabs button{font-size:9.5px;letter-spacing:-.02em}
+    .free-sticky{font-size:12.5px;padding-left:10px;padding-right:10px}
+  }
 </style>
 <script>
 /* ============================================================
@@ -257,10 +356,11 @@ window.DEPOT_FIREBASE = {
   </div>
 
   <div class="tabs">
-    <button id="tabDepot" class="active">Depot</button>
-    <button id="tabSec">Wertpapier</button>
-    <button id="tabRebal">Rebalancing</button>
-    <button id="tabSim">Simulation</button>
+    <button id="tabDepot" class="active"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a9 9 0 1 1-9-9v9z"/><path d="M15 3.5A9 9 0 0 1 20.5 9H15z"/></svg><span>Depot</span></button>
+    <button id="tabSec"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 3v18h18"/><path d="m7 15 4-4 3 3 6-7"/></svg><span>Wertpapier</span></button>
+    <button id="tabRebal"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v18M5 7h14M5 7l-3 7a3 3 0 0 0 6 0zM19 7l-3 7a3 3 0 0 0 6 0zM8 21h8"/></svg><span>Rebalancing</span></button>
+    <button id="tabSim"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 3h6M10 3v6l-5 9a2 2 0 0 0 2 3h10a2 2 0 0 0 2-3l-5-9V3"/><path d="M7.5 15h9"/></svg><span>Simulation</span></button>
+    <button id="tabFree"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="10" r="4"/><path d="M12 2v1.5M4.2 5.2l1 1M19.8 5.2l-1 1M2 18h20M5 22h14"/><path d="M8 14.5 6.5 18M16 14.5l1.5 3.5"/></svg><span>Freiheit</span></button>
   </div>
 
   <!-- ================= DEPOT TAB ================= -->
@@ -425,6 +525,110 @@ window.DEPOT_FIREBASE = {
         Tipp: Im Depot-Chart auf eine Stelle klicken übernimmt das Datum hierher.</div>
     </div>
     <div id="simOut"></div>
+  </section>
+
+  <!-- ================= FREIHEIT TAB ================= -->
+  <section id="viewFree" style="display:none">
+    <div id="freeSticky" class="free-sticky" aria-hidden="true"></div>
+    <div id="freeCards" class="cards free-cards"></div>
+
+    <div class="free-grid">
+      <div class="panel">
+        <h2>Deine Ausgangslage</h2>
+        <div class="free-fields">
+          <div class="field"><label for="frAge">Alter heute</label>
+            <input type="number" inputmode="numeric" id="frAge" min="16" max="75" step="1"></div>
+          <div class="field"><label for="frNet">Monatsnetto €</label>
+            <input type="text" inputmode="decimal" id="frNet"></div>
+          <div class="field full"><label for="frQuote">Sparquote <span class="muted" id="frQuoteOut"></span></label>
+            <div class="range-row"><input type="range" id="frQuoteRange" min="0" max="90" step="1" aria-label="Sparquote in Prozent">
+              <span class="unit-in"><input type="text" inputmode="decimal" id="frQuote" aria-label="Sparquote in Prozent"><span>%</span></span></div></div>
+          <div class="field"><label for="frRaise">Gehaltsplus % p. a.</label>
+            <input type="text" inputmode="decimal" id="frRaise"></div>
+          <div class="field"><label for="frExtra">Weiteres Vermögen €</label>
+            <input type="text" inputmode="decimal" id="frExtra" placeholder="0"></div>
+          <label class="free-toggle full" id="frUseDepotLbl">
+            <span><span class="t">Depotwert als Startkapital</span><span class="s muted" id="frDepotTxt"></span></span>
+            <input type="checkbox" id="frUseDepot"></label>
+        </div>
+      </div>
+
+      <div class="panel">
+        <h2>Dein Ruhestand</h2>
+        <p class="small muted" style="padding:4px 18px 0">Beträge in heutiger Kaufkraft – die Inflation wird eingerechnet.</p>
+        <div class="free-fields">
+          <div class="field"><label for="frWant">Entnahme €/Monat</label>
+            <input type="text" inputmode="decimal" id="frWant"></div>
+          <div class="field"><label for="frInfl">Inflation % p. a.</label>
+            <input type="text" inputmode="decimal" id="frInfl"></div>
+          <div class="field full"><label id="frModeLbl">Kapital</label>
+            <div class="seg seg-full" role="group" aria-labelledby="frModeLbl">
+              <button type="button" id="frModeSpend">Aufbrauchen</button>
+              <button type="button" id="frModeKeep">Erhalten</button>
+            </div></div>
+          <div class="field" id="frEndAgeField"><label for="frEndAge">Reicht bis Alter</label>
+            <input type="number" inputmode="numeric" id="frEndAge" min="60" max="110" step="1"></div>
+          <div class="field full hint" id="frKeepHint" style="display:none">Du lebst nur von den Erträgen – die Kaufkraft deines Vermögens bleibt dauerhaft erhalten.</div>
+          <div class="field" id="frSpacer"></div>
+          <div class="field"><label for="frPension">Gesetzl. Rente €/M.</label>
+            <input type="text" inputmode="decimal" id="frPension" placeholder="0"></div>
+          <div class="field"><label for="frPensionAge">Rente ab Alter</label>
+            <input type="number" inputmode="numeric" id="frPensionAge" min="50" max="75" step="1"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h2>Rendite <span class="muted small" style="font-weight:400">– dein Depot als Kompass</span></h2>
+      <div class="pad" style="padding-bottom:6px">
+        <div class="ret-head">
+          <span class="ret-big" id="frRetOut">–</span>
+          <span class="small muted" id="frRealOut"></span>
+        </div>
+        <div class="ret-track">
+          <input type="range" id="frRet" min="0" max="15" step="0.1" aria-label="Angenommene Rendite in Prozent pro Jahr">
+          <div class="ret-marks" id="frMarks" aria-hidden="true"></div>
+        </div>
+        <div class="ret-scale small muted" aria-hidden="true"><span>0 %</span><span>3 %</span><span>6 %</span><span>9 %</span><span>12 %</span><span>15 %</span></div>
+      </div>
+      <div id="frAnchors"></div>
+    </div>
+
+    <div class="panel">
+      <div class="flex" style="padding:16px 18px 0">
+        <h2 style="padding:0">Dein Vermögen über die Jahre</h2>
+        <span class="spacer"></span>
+        <div class="seg" role="group" aria-label="Darstellung">
+          <button type="button" id="frViewReal">Heutige Kaufkraft</button>
+          <button type="button" id="frViewNom">Nominal</button>
+        </div>
+      </div>
+      <div style="padding:8px 14px 6px;position:relative">
+        <svg id="freeChart" role="img" aria-label="Vermögensverlauf in Anspar- und Entnahmephase" viewBox="0 0 860 280" style="width:100%;height:auto;display:block"></svg>
+        <div id="freeTip" class="tip"></div>
+      </div>
+      <div class="pad small muted" id="freeLegend" style="padding-top:0"></div>
+    </div>
+
+    <div class="panel">
+      <h2>Wunschalter-Check</h2>
+      <div class="pad" style="padding-bottom:0">
+        <label for="frWish" class="small" style="font-weight:600">Ich möchte aufhören mit <span id="frWishOut"></span></label>
+        <input type="range" id="frWish" min="20" max="80" step="1" style="width:100%">
+      </div>
+      <div id="frWishRes" class="pad"></div>
+    </div>
+
+    <div class="panel">
+      <h2>Was wäre, wenn …?</h2>
+      <p class="pad small muted" style="padding-bottom:0">Frühestes Ruhestandsalter – Zeilen: Rendite p. a., Spalten: Sparquote. Umrandet: deine aktuelle Annahme.</p>
+      <div id="frMatrix" style="overflow-x:auto"></div>
+    </div>
+
+    <div class="pad small muted" style="padding:0 6px">
+      Rechenbeispiel mit konstanter Rendite – keine Vorhersage und keine Anlageberatung. Steuern, Kosten und
+      Schwankungen (Reihenfolge der Renditen) sind nicht berücksichtigt. Sparrate und Entnahme werden jährlich
+      angepasst (Gehaltsplus bzw. Inflation), die gesetzliche Rente wächst mit der Inflation.</div>
   </section>
 
   <footer>Kursdaten: Yahoo Finance (ohne Gewähr, ggf. 15 min verzögert) · Alle Daten bleiben lokal und verschlüsselt in deinem Browser · Keine Anlageberatung</footer>
@@ -920,6 +1124,7 @@ function sparkline(data, w=70, h=24){
 function render(){
   if(!state) return;
   renderKPIs(); renderHistory(); renderPositions(); renderDonut(); renderTargets();
+  if(freeVisible()) renderFree();
 }
 
 /* ---------- Depotwert-Chart (Zeitachse, gesamt oder gestapelt) ---------- */
@@ -2022,6 +2227,429 @@ function drawSimChart(){ const PC=PAL(); const NARROW=(window.innerWidth||900)<5
   hit.addEventListener("pointercancel", ()=>{ tip.style.display="none"; cur.style.display="none"; });
 }
 
+/* ---------- Freiheit: Wie lange muss ich noch arbeiten? ---------- */
+const FREE_DEFAULTS = {age:35, net:3000, quote:25, raise:2, extra:0, useDepot:true,
+                       want:2500, infl:2, mode:"spend", endAge:95, pension:0, pensionAge:67,
+                       ret:null, wish:null, view:"real"};
+const FREE_HORIZON = 100;        // Kapitalerhalt wird bis zu diesem Alter durchgerechnet
+const FREE_LAST_RETIRE = 85;     // spätestes geprüftes Ruhestandsalter
+const YEAR_MS = 365.25*86400000;
+const RET_MAX = 15;              // Skala des Rendite-Sliders (% p. a.)
+const FREE_ACC = "#0d9488", FREE_DEC = "#6366f1";
+const fmtMonthLong = new Intl.DateTimeFormat("de-DE",{month:"long",year:"numeric"});
+let freeLT = {};                 // symbol -> {cagr, years} – langfristige Rendite aus der Kurshistorie
+let freeLTLoading = false;
+let freeLast = null;             // letzte Rechnung fürs Chart
+let freeBound = false, freeRaf = 0;
+
+function freeCfg(){ return Object.assign({...FREE_DEFAULTS}, (state && state.settings.free) || {}); }
+function freeSet(patch){
+  state.settings.free = Object.assign(freeCfg(), patch);
+  saveState(); scheduleFree();
+}
+function scheduleFree(){ cancelAnimationFrame(freeRaf); freeRaf = requestAnimationFrame(renderFree); }
+const freeVisible = () => document.getElementById("viewFree").style.display !== "none";
+
+/* Monatliche Simulation ab heute. retireM = Monate bis zum Ruhestand.
+   Ansparen: Sparrate wächst jährlich mit dem Gehaltsplus.
+   Entnahme: Wunschbetrag wächst jährlich mit der Inflation, abzüglich gesetzlicher Rente. */
+function freeRun(p, retireM, withPath){
+  const rm = Math.pow(1+p.ret, 1/12) - 1;
+  const horizon = Math.round(((p.mode==="keep" ? FREE_HORIZON : p.endAge) - p.age) * 12);
+  let v = p.start, vRet = null, ok = true, emptyAt = null, raiseF = 1, inflF = 1;
+  const path = withPath ? [v] : null;
+  for(let m=0; m<horizon; m++){
+    if(m>0 && m%12===0){ raiseF *= 1+p.raise; inflF *= 1+p.infl; }
+    if(m===retireM) vRet = v;
+    if(m < retireM){
+      v = v*(1+rm) + p.save*raiseF;
+    } else {
+      const pens = (p.age + m/12 >= p.pensionAge) ? p.pension*inflF : 0;
+      v = v*(1+rm) - Math.max(0, p.want*inflF - pens);
+      if(v < 0){
+        ok = false; if(emptyAt==null) emptyAt = m;
+        if(!withPath) break;
+        v = 0;
+      }
+    }
+    if(withPath) path.push(v);
+  }
+  if(vRet==null) vRet = v;
+  if(ok && p.mode==="keep"){
+    // Kapitalerhalt: Kaufkraft am Ende mindestens so hoch wie zu Rentenbeginn
+    const real = (val, m) => val / Math.pow(1+p.infl, m/12);
+    ok = real(v, horizon) >= real(vRet, retireM) - 1;
+  }
+  return {ok, vRet, emptyAt, path, horizon};
+}
+function freeMaxRetireM(p){
+  const last = Math.min(FREE_LAST_RETIRE, (p.mode==="keep" ? FREE_HORIZON : p.endAge) - 1);
+  return Math.round((last - p.age) * 12);
+}
+/* Frühester Ruhestand in Monaten ab heute (binäre Suche – später aufhören hilft immer), null = nicht erreichbar */
+function freeEarliest(p){
+  const maxM = freeMaxRetireM(p);
+  if(maxM < 0) return null;
+  if(freeRun(p, 0).ok) return 0;
+  if(!freeRun(p, maxM).ok) return null;
+  let lo = 0, hi = maxM;
+  while(hi-lo > 1){ const mid = (lo+hi)>>1; if(freeRun(p, mid).ok) hi = mid; else lo = mid; }
+  return hi;
+}
+// kleinster Wert in [lo,hi], für den ok() gilt (ok steigt mit x); null wenn selbst hi nicht reicht
+function freeMinX(ok, lo, hi){
+  if(!ok(hi)) return null; if(ok(lo)) return lo;
+  for(let i=0;i<40;i++){ const m=(lo+hi)/2; if(ok(m)) hi=m; else lo=m; }
+  return hi;
+}
+// größter Wert in [lo,hi], für den ok() gilt (ok fällt mit x)
+function freeMaxX(ok, lo, hi){
+  if(!ok(lo)) return null; if(ok(hi)) return hi;
+  for(let i=0;i<40;i++){ const m=(lo+hi)/2; if(ok(m)) lo=m; else hi=m; }
+  return lo;
+}
+
+function freeParams(c, retPct){
+  const start = (c.useDepot ? totals().total : 0) + (c.extra||0);
+  return {age:c.age, start, save:c.net*c.quote/100, raise:c.raise/100, infl:c.infl/100, ret:retPct/100,
+          want:c.want, pension:c.pension||0, pensionAge:c.pensionAge, endAge:c.endAge, mode:c.mode};
+}
+
+/* Interner Zinsfuß (XIRR) per Bisektion – flows: [{t (ms), v}] */
+function xirr(flows){
+  const t0 = Math.min(...flows.map(f=>f.t));
+  const npv = r => flows.reduce((s,f)=> s + f.v/Math.pow(1+r, (f.t-t0)/YEAR_MS), 0);
+  let lo = -0.95, hi = 2;
+  if(npv(lo)*npv(hi) > 0) return null;
+  for(let i=0;i<100;i++){ const m=(lo+hi)/2; if(npv(m)>0) lo=m; else hi=m; }
+  return (lo+hi)/2;
+}
+
+/* Rendite-Anker aus dem eigenen Depot */
+function freeAnchors(){
+  const now = Date.now();
+  const items = state.positions.map((p,i)=>{
+    const val = posValue(p), cost = p.buyPrice ? p.shares*p.buyPrice : null;
+    const yrs = p.buyDate ? (now - new Date(p.buyDate+"T12:00:00"))/YEAR_MS : null;
+    // Ein Kauf = ein Zahlungsstrom: dann ist die annualisierte Rendite genau der interne Zinsfuß
+    const since = (val && cost && yrs>=1) ? Math.pow(val/cost, 1/yrs)-1 : null;
+    return {p, color:COLORS[i%COLORS.length], val, cost, yrs, since, lt:freeLT[p.symbol]};
+  });
+  // Depot-Mix: Zielgewichtung (falls gepflegt), sonst aktuelle Gewichtung × langfristige Renditen
+  const useTarget = state.positions.some(p=> +p.targetPct>0);
+  let wSum = 0, acc = 0;
+  items.forEach(it=>{
+    if(!it.lt || it.lt.cagr==null) return;
+    const w = useTarget ? (+it.p.targetPct||0) : (it.val||0);
+    wSum += w; acc += w*it.lt.cagr;
+  });
+  const mix = wSum>0 ? acc/wSum : null;
+  // Depot-Zinsfuß: Käufe als Auszahlungen, heutiger Wert als Einzahlung
+  const flows = []; let endVal = 0;
+  items.forEach(it=>{ if(it.cost && it.p.buyDate && it.val){
+    flows.push({t:new Date(it.p.buyDate+"T12:00:00").getTime(), v:-it.cost}); endVal += it.val; } });
+  let irr = null, irrYrs = null;
+  if(flows.length){
+    irrYrs = flows.reduce((s,f)=> s - f.v*(now-f.t)/YEAR_MS, 0) / flows.reduce((s,f)=> s - f.v, 0); // kapitalgewichtete Haltedauer
+    if(irrYrs >= 1) irr = xirr(flows.concat([{t:now, v:endVal}]));
+  }
+  return {items, mix, useTarget, irr, irrYrs};
+}
+function freeRetPct(c, A){
+  if(c.ret!=null) return c.ret;
+  if(A.mix!=null) return Math.max(0, Math.min(7, Math.round(A.mix*200)/2));  // vorsichtig: max. 7 %
+  return 5;
+}
+
+async function freeLoadLT(){
+  if(freeLTLoading || !state) return;
+  const todo = [...new Set(state.positions.map(p=>p.symbol))].filter(s=> !freeLT[s]);
+  if(!todo.length) return;
+  freeLTLoading = true;
+  await Promise.all(todo.map(async s=>{
+    try{
+      const h = await fetchHistory(s, "10y", "1mo");
+      const n = h.closes.length;
+      const yrs = n>1 ? (h.times[n-1]-h.times[0])/(365.25*86400) : 0;
+      freeLT[s] = {cagr: yrs>=3 ? CAGR(h.closes[n-1], h.closes[0], yrs) : null, years:yrs};
+    }catch(e){ freeLT[s] = {cagr:null, years:0, err:true}; }
+  }));
+  freeLTLoading = false;
+  scheduleFree();
+}
+
+/* Eingabefelder: id -> [Einstellung, min, max, ganzzahlig] */
+const FREE_FIELDS = {frAge:["age",16,75,1], frNet:["net",0,1e6], frQuote:["quote",0,100], frRaise:["raise",-5,15],
+  frExtra:["extra",0,1e9], frWant:["want",0,1e6], frInfl:["infl",-2,15], frEndAge:["endAge",60,110,1],
+  frPension:["pension",0,1e5], frPensionAge:["pensionAge",50,80,1]};
+
+function initFreeTab(){
+  const c = freeCfg(), $ = id => document.getElementById(id);
+  Object.entries(FREE_FIELDS).forEach(([id,[k]])=>{ $(id).value = (k==="pension"||k==="extra") && !c[k] ? "" : toComma(c[k]); });
+  $("frQuoteRange").value = c.quote;
+  $("frUseDepot").checked = !!c.useDepot;
+  if(!freeBound){
+    freeBound = true;
+    Object.entries(FREE_FIELDS).forEach(([id,[k,lo,hi,int]])=>{
+      $(id).addEventListener("input", ()=>{
+        const raw = $(id).value.trim();
+        let v = raw==="" && (k==="pension"||k==="extra") ? 0 : parseDE(raw);
+        if(isNaN(v)) return;
+        v = Math.max(lo, Math.min(hi, int ? Math.round(v) : v));
+        if(id==="frQuote") $("frQuoteRange").value = v;
+        freeSet({[k]:v});
+      });
+    });
+    $("frQuoteRange").addEventListener("input", e=>{ $("frQuote").value = e.target.value; freeSet({quote:+e.target.value}); });
+    $("frUseDepot").addEventListener("change", e=> freeSet({useDepot:e.target.checked}));
+    $("frModeSpend").onclick = ()=> freeSet({mode:"spend"});
+    $("frModeKeep").onclick  = ()=> freeSet({mode:"keep"});
+    $("frViewReal").onclick  = ()=> freeSet({view:"real"});
+    $("frViewNom").onclick   = ()=> freeSet({view:"nom"});
+    $("frRet").addEventListener("input", e=> freeSet({ret:+e.target.value}));
+    $("frWish").addEventListener("input", e=> freeSet({wish:+e.target.value}));
+    if("IntersectionObserver" in window){
+      new IntersectionObserver(([e])=>{
+        $("freeSticky").classList.toggle("show", !e.isIntersecting && e.boundingClientRect.top < 0);
+      }).observe($("freeCards"));
+    }
+    $("frAnchors").addEventListener("click", e=>{
+      const b = e.target.closest("button[data-ret]");
+      if(b) freeSet({ret: Math.max(0, Math.min(RET_MAX, Math.round(+b.dataset.ret*10)/10))});
+    });
+  }
+  renderFree();
+}
+
+const freeAgeTxt = (age, m) => { const t = age*12+m; return `${Math.floor(t/12)} J.${t%12?` ${t%12} M.`:""}`; };
+const freeDateAt = m => { const d = new Date(); d.setDate(1); d.setMonth(d.getMonth()+m); return d; };
+const pctTxt = x => x==null ? "–" : fmtPct.format(x);
+
+function renderFree(){
+  if(!state || !freeVisible()) return;
+  freeLoadLT();
+  const c = freeCfg(), $ = id => document.getElementById(id);
+  const A = freeAnchors(), ret = freeRetPct(c, A);
+  const p = freeParams(c, ret);
+  const {total} = totals();
+
+  $("frQuoteOut").textContent = "= " + fmtEUR0.format(p.save) + "/Monat";
+  $("frDepotTxt").textContent = total>0 ? "aktuell " + fmtEUR0.format(total) : "Kurse werden geladen …";
+  $("frUseDepotLbl").classList.toggle("on", !!c.useDepot);
+  const keep = c.mode==="keep";
+  $("frModeSpend").classList.toggle("active", !keep);
+  $("frModeKeep").classList.toggle("active", keep);
+  $("frEndAgeField").style.display = keep ? "none" : "";
+  $("frSpacer").style.display = keep ? "none" : "";
+  $("frKeepHint").style.display = keep ? "" : "none";
+  $("frViewReal").classList.toggle("active", c.view!=="nom");
+  $("frViewNom").classList.toggle("active", c.view==="nom");
+  $("frRet").value = Math.min(RET_MAX, ret);
+  $("frRetOut").textContent = fmtPct2.format(ret) + " % p. a.";
+  $("frRealOut").textContent = `≈ ${fmtPct2.format(((1+ret/100)/(1+c.infl/100)-1)*100)} % real nach Inflation` + (c.ret==null ? " · Startwert aus deinem Depot" : "");
+  renderFreeAnchors(A, ret);
+
+  // Ergebnis
+  const R = freeEarliest(p);
+  const wishMin = c.age+1, wish = Math.max(wishMin, Math.min(80, c.wish!=null ? c.wish : (R!=null ? Math.max(wishMin, Math.floor(c.age+R/12)-3) : 60)));
+  $("frWish").min = wishMin; $("frWish").value = wish;
+  $("frWishOut").innerHTML = `<strong>${wish}</strong>`;
+
+  const chartR = R!=null ? R : (wish-c.age)*12;
+  const run = freeRun(p, chartR, true);
+  const inflAt = Math.pow(1+p.infl, Math.floor(chartR/12));
+  const realAt = v => v/Math.pow(1+p.infl, chartR/12);
+  let cards;
+  if(R===0){
+    cards = `<div class="card wide"><div class="lbl">Noch arbeiten</div><div class="val pos">0 Jahre</div>
+        <div class="sub muted">Dein Kapital reicht schon heute</div></div>`;
+  } else if(R==null){
+    cards = `<div class="card wide"><div class="lbl">Noch arbeiten</div><div class="val neg">nicht erreichbar</div>
+        <div class="sub muted">bis Alter ${FREE_LAST_RETIRE} – siehe Wunschalter-Check</div></div>`;
+  } else {
+    const y = Math.floor(R/12), mo = R%12;
+    cards = `<div class="card"><div class="lbl">Noch arbeiten</div>
+        <div class="val">${y} ${y===1?"Jahr":"Jahre"}${mo?` ${mo} ${mo===1?"Monat":"Monate"}`:""}</div>
+        <div class="sub muted">bei ${esc(fmtEUR0.format(p.save))} Sparrate/Monat</div></div>
+      <div class="card"><div class="lbl">Frei mit</div><div class="val pos">${esc(freeAgeTxt(c.age, R))}</div>
+        <div class="sub muted">ab ${esc(fmtMonthLong.format(freeDateAt(R)))}</div></div>`;
+  }
+  if(R!=null) cards += `
+      <div class="card"><div class="lbl">Benötigtes Kapital</div><div class="val">${esc(fmtEUR0.format(run.vRet))}</div>
+        <div class="sub muted">≈ ${esc(fmtEUR0.format(realAt(run.vRet)))} in heutiger Kaufkraft</div></div>
+      <div class="card"><div class="lbl">Entnahme dann</div><div class="val">${esc(fmtEUR0.format(c.want*inflAt))}<span class="small muted" style="font-weight:400">/Monat</span></div>
+        <div class="sub muted">= ${esc(fmtEUR0.format(c.want))} heute${c.pension>0?` · ab ${c.pensionAge} weniger durch Rente`:""}</div></div>`;
+  $("freeCards").innerHTML = cards;
+  $("freeSticky").innerHTML = R==null
+    ? `<span>Bis ${FREE_LAST_RETIRE} <strong class="neg">nicht erreichbar</strong></span><strong>${esc(fmtPct2.format(ret))} %</strong>`
+    : `<span>Frei mit <strong class="pos">${esc(freeAgeTxt(c.age, R))}</strong></span>`
+      + `<span>noch <strong>${esc(freeAgeTxt(0, R))}</strong></span><strong>${esc(fmtPct2.format(ret))} %</strong>`;
+
+  freeLast = {path:run.path, R:chartR, reached:R!=null, emptyAt:run.emptyAt, age:c.age, infl:p.infl, view:c.view,
+              save:p.save, raise:p.raise, want:c.want, pension:p.pension, pensionAge:c.pensionAge, mode:c.mode};
+  drawFreeChart();
+  const endTxt = c.mode==="keep" ? "Kapitalerhalt: Kaufkraft des Vermögens bleibt dauerhaft stehen"
+    : run.emptyAt!=null ? `<span style="color:var(--neg)">Kapital aufgebraucht mit ${esc(freeAgeTxt(c.age, run.emptyAt))}</span>`
+    : `Kapital reicht bis ${c.endAge}`;
+  $("freeLegend").innerHTML = `<span style="color:${FREE_ACC};font-weight:600">■ Ansparphase</span> · `
+    + `<span style="color:${FREE_DEC};font-weight:600">■ Entnahmephase</span> · ${endTxt}`
+    + (R==null ? ` · gezeigt: Ruhestand mit ${wish}` : "");
+
+  renderFreeWish(c, p, wish);
+  renderFreeMatrix(c, ret, R);
+}
+
+function renderFreeAnchors(A, ret){
+  const pos = v => (Math.max(0, Math.min(RET_MAX, v*100))/RET_MAX*100).toFixed(2)+"%";
+  let marks = "";
+  A.items.forEach(it=>{
+    if(it.since!=null) marks += `<span style="left:${pos(it.since)};color:${it.color}"></span>`;
+    if(it.lt && it.lt.cagr!=null) marks += `<span class="lt" style="left:${pos(it.lt.cagr)};color:${it.color}"></span>`;
+  });
+  if(A.irr!=null) marks += `<span style="left:${pos(A.irr)};color:var(--text)"></span>`;
+  if(A.mix!=null) marks += `<span class="mix" style="left:${pos(A.mix)}"></span>`;
+  document.getElementById("frMarks").innerHTML = marks;
+
+  // Anker-Button: Symbol, Wert, Beschriftung – ein Tipp übernimmt den Wert in den Slider
+  const btn = (v, sw, cap, cls="", title="") =>
+    `<button type="button" class="anchor ${cls}" data-ret="${(v*100).toFixed(2)}" title="${esc(title||"Als Rendite übernehmen")}">${sw}<span class="v">${esc(pctTxt(v))}</span><span class="c">${esc(cap)}</span></button>`;
+  const off = txt => `<span class="anchor off small muted">${esc(txt)}</span>`;
+  let top = A.mix!=null
+    ? btn(A.mix, `<span class="sw dia" style="color:var(--text)"></span>`, "Depot-Mix langfristig", "mix",
+          `Langfristige Renditen gewichtet nach ${A.useTarget?"deiner Zielgewichtung":"aktueller Gewichtung"}`)
+    : off(freeLTLoading ? "Langfrist-Renditen werden geladen …" : "Depot-Mix: keine Langfristdaten");
+  top += A.irr!=null
+    ? btn(A.irr, `<span class="sw" style="color:var(--text)"></span>`, "ganzes Depot seit Kauf", "", "Interner Zinsfuß über alle Käufe")
+    : off(A.irrYrs!=null ? `Depot-Zinsfuß: erst Ø ${fmtPct2.format(A.irrYrs)} Jahre investiert` : "Depot-Zinsfuß: Einstand + Kaufdatum fehlen");
+
+  const rows = A.items.map(it=>{
+    const sw = lt => `<span class="sw ${lt?"lt":""}" style="color:${it.color}"></span>`;
+    const since = it.since!=null ? btn(it.since, sw(false), "seit Kauf")
+      : off(it.yrs!=null && it.yrs<1 ? "seit Kauf: < 1 Jahr" : "seit Kauf: Daten fehlen");
+    const lt = !it.lt ? off("langfristig: lädt …")
+      : it.lt.cagr!=null ? btn(it.lt.cagr, sw(true), fmtPct2.format(it.lt.years)+" Jahre")
+      : off(it.lt.err ? "langfristig: n. v." : "Historie zu kurz");
+    return `<div class="anc-row"><div class="who"><div class="nm">${esc(it.p.name||it.p.symbol)}</div><div class="sy">${esc(it.p.symbol)}</div></div>${since}${lt}</div>`;
+  }).join("");
+  document.getElementById("frAnchors").innerHTML = `<div class="anchors">${top}</div>`
+    + (rows ? `<div class="anc-list">${rows}</div>` : "") + `
+    <div class="pad small muted" style="padding-top:10px">Tippe auf einen Wert, um ihn zu übernehmen.
+      ○ seit deinem Kauf (Zinsfuß) · ● Kursverlauf der letzten bis zu 10 Jahre · ◆ Depot-Mix.
+      Kurze Zeiträume schwanken stark – für Jahrzehnte ist ein vorsichtiger Wert meist realistischer.</div>`;
+}
+
+function renderFreeWish(c, p, wish){
+  const wm = (wish-c.age)*12, el = document.getElementById("frWishRes");
+  const okWith = over => freeRun(Object.assign({}, p, over), wm).ok;
+  const q = (x, d=0) => fmtPct2.format(Math.round(x*Math.pow(10,d))/Math.pow(10,d));
+  if(okWith({})){
+    const minQ = freeMinX(x=> okWith({save:c.net*x/100}), 0, 100);
+    const maxW = freeMaxX(x=> okWith({want:x}), c.want, c.want*5);
+    el.innerHTML = `<div class="wish ok"><strong>✓ Mit ${wish} aufhören klappt.</strong> Spielraum:<ul>
+      ${minQ!=null && minQ < c.quote-0.5 ? `<li>Sparquote ${q(minQ)} % würde schon reichen (${esc(fmtEUR0.format(c.net*minQ/100))}/Monat)</li>` : ""}
+      ${maxW!=null ? `<li>oder bis zu ${esc(fmtEUR0.format(maxW))}/Monat entnehmen (heutige Kaufkraft)</li>` : ""}
+    </ul></div>`;
+    return;
+  }
+  const needQ = freeMinX(x=> okWith({save:c.net*x/100}), 0, 100);
+  const maxW  = freeMaxX(x=> okWith({want:x}), 0, c.want);
+  const needR = freeMinX(x=> okWith({ret:x}), 0, 0.2);
+  const needK = freeMinX(x=> okWith({start:p.start+x}), 0, 1e8);
+  el.innerHTML = `<div class="wish no"><strong>Mit ${wish} reicht es noch nicht.</strong> Jede dieser Stellschrauben allein würde genügen:<ul>
+    <li>${needQ!=null ? `Sparquote <strong>${q(needQ)} %</strong> (${esc(fmtEUR0.format(c.net*needQ/100))}/Monat)` : "Selbst 100 % Sparquote reichen nicht"}</li>
+    ${maxW!=null && maxW>0 ? `<li>Entnahme auf <strong>${esc(fmtEUR0.format(maxW))}/Monat</strong> senken</li>` : ""}
+    ${needR!=null ? `<li>Rendite von <strong>${q(needR*100,1)} % p. a.</strong></li>` : ""}
+    ${needK!=null ? `<li>heute <strong>${esc(fmtEUR0.format(needK))}</strong> zusätzlich anlegen</li>` : ""}
+  </ul></div>`;
+}
+
+function renderFreeMatrix(c, ret, R){
+  const rets = [-2,-1,0,1,2].map(d=> Math.round((ret+d)*10)/10).filter(r=> r>=0);
+  const qs = [...new Set([-10,-5,0,5,10].map(d=> Math.round(c.quote+d)).filter(q=> q>=0 && q<=100))];
+  const cell = (r, q) => {
+    const Rx = freeEarliest(freeParams(Object.assign({}, c, {quote:q}), r));
+    const cur = Math.abs(r-ret)<1e-9 && q===Math.round(c.quote);
+    // verglichen wird das angezeigte Alter, damit gleiche Zahlen gleich gefärbt sind
+    const age = X => X==null ? Infinity : Math.floor(c.age + X/12);
+    const cls = cur ? "cur" : age(Rx)===age(R) ? "" : age(Rx)<age(R) ? "better" : "worse";
+    const txt = Rx==null ? "–" : Rx===0 ? "jetzt" : String(Math.floor(c.age + Rx/12));
+    return `<td class="c ${cls}">${txt}</td>`;
+  };
+  document.getElementById("frMatrix").innerHTML = `<table class="mx">
+    <thead><tr><th>Rendite</th>${qs.map(q=>`<th>${q} %<div class="s muted" style="text-transform:none;font-size:11px">${esc(fmtEUR0.format(c.net*q/100))}</div></th>`).join("")}</tr></thead>
+    <tbody>${rets.map(r=>`<tr><td><strong>${fmtPct2.format(r)} %</strong></td>${qs.map(q=>cell(r,q)).join("")}</tr>`).join("")}</tbody>
+  </table><div class="pad small muted" style="padding-top:8px">Zahl = Alter beim Ruhestand · – = bis ${FREE_LAST_RETIRE} nicht erreichbar.</div>`;
+}
+
+function drawFreeChart(){ const PC=PAL(); const NARROW=(window.innerWidth||900)<560;
+  const s = freeLast, svg = document.getElementById("freeChart");
+  if(!s || !svg || !freeVisible()) return;
+  const W=NARROW?360:860, H=NARROW?300:280, L=NARROW?52:76, R=10, T=20, B=NARROW?28:30, FS=NARROW?12:11, iw=W-L-R, ih=H-T-B;
+  svg.setAttribute("viewBox","0 0 "+W+" "+H);
+  const real = s.view!=="nom";
+  const vals = s.path.map((v,m)=> real ? v/Math.pow(1+s.infl, m/12) : v);
+  const n = vals.length;
+  const ymax = Math.max(...vals, 1)*1.08;
+  const x = m => L + m/((n-1)||1)*iw;
+  const y = v => T + ih - v/ymax*ih;
+  let g = "";
+  for(let k=0;k<=4;k++){
+    const v = ymax*k/4, yy = y(v);
+    g += `<line x1="${L}" x2="${W-R}" y1="${yy}" y2="${yy}" stroke="${PC.grid}"/>`;
+    g += `<text x="${L-8}" y="${yy+4}" text-anchor="end" font-size="${FS}" fill="${PC.axis}">${esc(axisMoney(v,NARROW))}</text>`;
+  }
+  const step = NARROW ? 20 : 10;
+  for(let a = Math.ceil(s.age/step)*step; a <= s.age+(n-1)/12; a += step){
+    g += `<text x="${x((a-s.age)*12)}" y="${H-8}" text-anchor="middle" font-size="${FS}" fill="${PC.axis}">${a} J.</text>`;
+  }
+  const seg = (a, b) => { let d=""; for(let m=a;m<=b;m++) d += (m===a?"M":"L")+x(m).toFixed(1)+","+y(vals[m]).toFixed(1); return d; };
+  const rIdx = Math.min(s.R, n-1), base = y(0).toFixed(1);
+  if(rIdx>0){
+    g += `<path d="${seg(0,rIdx)}L${x(rIdx).toFixed(1)},${base}L${x(0).toFixed(1)},${base}Z" fill="${FREE_ACC}" fill-opacity="0.14"/>`;
+    g += `<path d="${seg(0,rIdx)}" fill="none" stroke="${FREE_ACC}" stroke-width="2"/>`;
+  }
+  if(rIdx<n-1){
+    g += `<path d="${seg(rIdx,n-1)}L${x(n-1).toFixed(1)},${base}L${x(rIdx).toFixed(1)},${base}Z" fill="${FREE_DEC}" fill-opacity="0.14"/>`;
+    g += `<path d="${seg(rIdx,n-1)}" fill="none" stroke="${FREE_DEC}" stroke-width="2"/>`;
+  }
+  const vline = (m, label, color, dash) => {
+    const xx = x(m), anchor = xx > W-90 ? "end" : "start", dx = anchor==="end" ? -5 : 5;
+    return `<line x1="${xx}" x2="${xx}" y1="${T}" y2="${T+ih}" stroke="${color}" stroke-width="1.3" stroke-dasharray="${dash}"/>`
+         + `<text x="${xx+dx}" y="${T+2}" text-anchor="${anchor}" font-size="${FS}" font-weight="600" fill="${color}">${esc(label)}</text>`;
+  };
+  g += vline(rIdx, (s.reached?"Ruhestand ":"Wunsch ") + Math.floor(s.age+rIdx/12), s.reached?PC.ink:PC.neg, "5 4");
+  const pm = Math.round((s.pensionAge-s.age)*12);
+  if(s.pension>0 && pm>rIdx && pm<n-1) g += vline(pm, "Rente "+s.pensionAge, PC.axis, "2 3");
+  g += `<line id="freeCursor" x1="0" x2="0" y1="${T}" y2="${T+ih}" stroke="${PC.axis}" stroke-dasharray="3 3" style="display:none"/>`;
+  g += `<rect id="freeHit" x="${L}" y="${T}" width="${iw}" height="${ih}" fill="transparent" style="touch-action:pan-y"/>`;
+  svg.innerHTML = g;
+
+  const hit = svg.querySelector("#freeHit"), cur = svg.querySelector("#freeCursor"), tip = document.getElementById("freeTip");
+  const hide = ()=>{ tip.style.display="none"; cur.style.display="none"; };
+  const show = ev=>{
+    const rect = svg.getBoundingClientRect();
+    const vx = (ev.clientX-rect.left)*W/rect.width;
+    const m = Math.max(0, Math.min(n-1, Math.round((vx-L)/iw*(n-1))));
+    cur.setAttribute("x1", x(m)); cur.setAttribute("x2", x(m)); cur.style.display = "";
+    const yr = Math.floor(m/12), infl = Math.pow(1+s.infl, yr), defl = real ? Math.pow(1+s.infl, m/12) : 1;
+    const saving = m < s.R;
+    const pens = s.age+m/12 >= s.pensionAge ? s.pension*infl : 0;
+    const flow = saving ? s.save*Math.pow(1+s.raise, yr) : Math.max(0, s.want*infl - pens);
+    tip.innerHTML = `<div style="font-weight:700;margin-bottom:4px">Alter ${esc(freeAgeTxt(s.age, m))} · ${esc(fmtMonthLong.format(freeDateAt(m)))}</div>
+      <div class="r"><span>Vermögen${real?" (heutige €)":""}</span><span class="v">${esc(fmtEUR0.format(vals[m]))}</span></div>
+      <div class="r"><span class="sw" style="background:${saving?FREE_ACC:FREE_DEC}"></span><span>${saving?"Sparrate":"Entnahme"}/Monat</span><span class="v">${esc(fmtEUR0.format(flow/defl))}</span></div>
+      ${!saving && pens>0 ? `<div class="r"><span>+ Rente/Monat</span><span class="v">${esc(fmtEUR0.format(pens/defl))}</span></div>` : ""}`;
+    tip.style.display = "block";
+    const px = x(m)/W*rect.width;
+    tip.style.left = Math.min(rect.width - tip.offsetWidth - 4, Math.max(4, px+12)) + "px";
+    tip.style.top = "8px";
+  };
+  hit.addEventListener("pointermove", show);
+  hit.addEventListener("pointerdown", show);   // Antippen auf dem Handy
+  hit.addEventListener("pointerleave", hide);
+  hit.addEventListener("pointercancel", hide);
+}
+
 /* ---------- Positionen verwalten ---------- */
 window.removePos = id=>{
   const p = state.positions.find(x=>x.id===id);
@@ -2168,7 +2796,8 @@ document.getElementById("confirmAdd").onclick = ()=>{
 
 /* ---------- Tabs / Toolbar ---------- */
 const TABS = {depot:["tabDepot","viewDepot"], sec:["tabSec","viewSec"],
-              rebal:["tabRebal","viewRebal"], sim:["tabSim","viewSim"]};
+              rebal:["tabRebal","viewRebal"], sim:["tabSim","viewSim"],
+              free:["tabFree","viewFree"]};
 function showTab(which){
   Object.entries(TABS).forEach(([k,[btn,view]])=>{
     const on = k===which;
@@ -2178,11 +2807,14 @@ function showTab(which){
   if(which==="rebal") renderTargets();
   if(which==="sim"){ initSimDefaults(); renderSimWeights(); }
   if(which==="sec") initSecTab();
+  if(which==="free") initFreeTab();
+  if(matchMedia("(max-width:560px)").matches) window.scrollTo(0,0);  // untere Tab-Leiste: neue Seite oben beginnen
 }
 document.getElementById("tabSec").onclick   = ()=> showTab("sec");
 document.getElementById("tabDepot").onclick = ()=> showTab("depot");
 document.getElementById("tabRebal").onclick = ()=> showTab("rebal");
 document.getElementById("tabSim").onclick   = ()=> showTab("sim");
+document.getElementById("tabFree").onclick  = ()=> showTab("free");
 
 document.getElementById("refreshBtn").onclick = ()=> refreshQuotes();
 document.getElementById("checkBtn").onclick = ()=>{ showTab("depot"); checkSources(); };
@@ -2521,6 +3153,7 @@ function repaintCharts(){
   try{ renderHistory(); renderDonut(); }catch(e){}
   if(typeof lastSim!=="undefined" && lastSim){ try{ drawSimChart(); }catch(e){} }
   if(typeof secState!=="undefined" && secState && secState.view){ try{ drawSecChart(); }catch(e){} }
+  try{ drawFreeChart(); }catch(e){}
 }
 document.getElementById("themeBtn").onclick = cycleTheme;
 if(themeMedia){ themeMedia.addEventListener("change", ()=>{ if(themePref()==="auto") applyTheme(); }); }
